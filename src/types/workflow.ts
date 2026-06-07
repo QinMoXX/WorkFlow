@@ -28,6 +28,7 @@ export type WorkflowNodeData = {
   saveDirectory?: string;
   lastOutputPath?: string;
   resultPath?: string;
+  resultUrl?: string;
   error?: string;
 };
 

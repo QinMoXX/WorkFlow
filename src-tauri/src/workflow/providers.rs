@@ -50,32 +50,52 @@ pub fn load_provider_configs(app: &AppHandle) -> Result<Vec<ProviderConfig>, Str
 }
 
 fn default_provider_configs() -> Vec<ProviderConfig> {
-    vec![ProviderConfig {
-        id: "openai".to_string(),
-        name: "OpenAI".to_string(),
-        base_url: "https://api.openai.com/v1".to_string(),
-        api_key: String::new(),
-        models: vec![
-            ProviderModel {
-                id: "gpt-image-1".to_string(),
-                name: "GPT Image 1".to_string(),
-                capability: ProviderCapability::TextToImage,
-            },
-            ProviderModel {
-                id: "gpt-image-1".to_string(),
-                name: "GPT Image 1 Edit".to_string(),
-                capability: ProviderCapability::ImageToImage,
-            },
-        ],
-    }]
+    vec![
+        ProviderConfig {
+            id: "openai".to_string(),
+            name: "OpenAI".to_string(),
+            base_url: "https://api.openai.com/v1".to_string(),
+            api_key: String::new(),
+            models: vec![
+                ProviderModel {
+                    id: "gpt-image-1".to_string(),
+                    name: "GPT Image 1".to_string(),
+                    capability: ProviderCapability::TextToImage,
+                },
+                ProviderModel {
+                    id: "gpt-image-1".to_string(),
+                    name: "GPT Image 1 Edit".to_string(),
+                    capability: ProviderCapability::ImageToImage,
+                },
+            ],
+        },
+        ProviderConfig {
+            id: "agnes".to_string(),
+            name: "Agnes AI".to_string(),
+            base_url: "https://apihub.agnes-ai.com/v1".to_string(),
+            api_key: String::new(),
+            models: vec![
+                ProviderModel {
+                    id: "agnes-image-2.0-flash".to_string(),
+                    name: "Agnes Image 2.0 Flash".to_string(),
+                    capability: ProviderCapability::TextToImage,
+                },
+                ProviderModel {
+                    id: "agnes-image-2.0-flash".to_string(),
+                    name: "Agnes Image 2.0 Flash Edit".to_string(),
+                    capability: ProviderCapability::ImageToImage,
+                },
+            ],
+        },
+    ]
 }
 
-pub fn validate_ai_node_provider(
-    providers: &[ProviderConfig],
+pub fn resolve_ai_node_provider<'a>(
+    providers: &'a [ProviderConfig],
     provider_id: Option<&str>,
     model_id: Option<&str>,
     capability: ProviderCapability,
-) -> Result<(), String> {
+) -> Result<&'a ProviderConfig, String> {
     let provider_id = provider_id
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| "缺少供应商预设".to_string())?;
@@ -99,8 +119,9 @@ pub fn validate_ai_node_provider(
         .models
         .iter()
         .find(|model| model.id == model_id && model.capability == capability)
-        .map(|_| ())
-        .ok_or_else(|| format!("模型预设不存在或能力不匹配：{}", model_id))
+        .ok_or_else(|| format!("模型预设不存在或能力不匹配：{}", model_id))?;
+
+    Ok(provider)
 }
 
 fn validate_provider_configs(providers: &[ProviderConfig]) -> Result<(), String> {

@@ -17,10 +17,10 @@
 - `[x]` 节点属性面板：可编辑 prompt、供应商、模型、画幅、风格、seed、strength 等字段。
 - `[x]` 单节点运行与完整工作流运行入口。
 - `[x]` 本地保存与恢复当前工作流 JSON。
-- `[~]` 多供应商配置：已有 AI 配置界面和后端持久化，但还没有真实 Provider Adapter 调用。
-- `[~]` 节点运行结果：已有 `resultPath` / `lastOutputPath` 字段和日志，但没有真实图片预览。
+- `[x]` 多供应商配置：已有 AI 配置界面、后端持久化和 OpenAI-compatible 图片 Provider Adapter。
+- `[~]` 节点运行结果：已有 `resultPath` / `resultUrl` / `lastOutputPath` 字段和日志，但没有真实图片预览。
 - `[ ]` 图片结果右键菜单：保存、复制、打开位置、重新运行。
-- `[ ]` 真实外部 AI 图片 API 调用。
+- `[x]` 真实外部 AI 图片 API 调用。
 
 ### 前端
 
@@ -66,10 +66,10 @@
 - `[x]` 强类型连线校验。
 - `[x]` 有向图构建、环检测、拓扑排序。
 - `[x]` 单节点运行时自动补跑上游依赖。
-- `[~]` 节点执行器：已有文本、图片路径、AI 节点校验和输出节点处理，但 AI 节点仍是模拟结果路径。
+- `[x]` 节点执行器：已有文本、图片路径、AI 节点真实调用和输出节点处理。
 - `[~]` API Key 后端存储：已在后端配置文件保存，但还不是系统安全存储或加密配置。
-- `[ ]` OpenAI 风格图片 Provider Adapter。
-- `[ ]` 图片下载、落盘、缩略图生成。
+- `[x]` OpenAI 风格图片 Provider Adapter。
+- `[~]` 图片下载、落盘、缩略图生成：已下载和落盘，缩略图未生成。
 - `[ ]` 保存图片、复制图片、打开文件所在目录 commands。
 
 ## 2. 阶段一：MVP 骨架收敛
@@ -95,30 +95,35 @@
 
 目标：把当前模拟 AI 节点替换为真实 OpenAI 风格图片 API 调用。
 
-- `[ ]` 在 Rust 后端新增 Provider Adapter 边界，例如：
+- `[x]` 在 Rust 后端新增 Provider Adapter 边界，例如：
   - `ImageProvider`
   - `TextToImageInput`
   - `ImageToImageInput`
   - `ImageResult`
-- `[ ]` 新增 OpenAI-compatible image adapter。
-- `[ ]` 使用供应商 `baseUrl` 拼接 `/images/generations`。
-- `[ ]` 使用 `Authorization: Bearer <apiKey>` 发送请求。
-- `[ ]` 文生图请求支持：
+- `[x]` 新增 OpenAI-compatible image adapter。
+- `[x]` 使用供应商 `baseUrl` 拼接 `/images/generations`。
+- `[x]` 使用 `Authorization: Bearer <apiKey>` 发送请求。
+- `[x]` 文生图请求支持：
   - `model`
   - `prompt`
   - `size`
   - `seed`
-- `[ ]` 图生图请求支持：
+- `[~]` 图生图请求支持：
   - `model`
   - `prompt`
   - `size`
   - `seed`
   - `tags`
   - `extra_body.image`
-- `[ ]` 解析响应中的图片 URL。
-- `[ ]` 下载远程图片到 `appData/assets/generated/`。
-- `[ ]` 将本地结果路径写回节点 `resultPath`。
-- `[ ]` API 错误、超时、响应格式错误写入运行日志。
+- `[x]` 解析响应中的图片 URL。
+- `[x]` 下载远程图片到 `appData/assets/generated/`。
+- `[x]` 将本地结果路径写回节点 `resultPath`，并记录远程 `resultUrl` 供下游图生图使用。
+- `[x]` API 错误、超时、响应格式错误写入运行日志。
+
+当前限制：
+
+- 图生图只支持远程图片 URL 或上游 AI 节点产生的 `resultUrl`。
+- 本地图片输入节点连接图生图时，如果 `imagePath` 不是 `http://` 或 `https://` URL，会提示缺少可用于 API 的图片 URL。后续阶段三需要实现本地图片导入、托管或供应商兼容上传策略。
 
 验收标准：
 

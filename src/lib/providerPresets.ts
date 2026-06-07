@@ -11,6 +11,16 @@ export const defaultProviderConfigs: ProviderConfig[] = [
       { id: "gpt-image-1", name: "GPT Image 1 Edit", capability: "imageToImage" },
     ],
   },
+  {
+    id: "agnes",
+    name: "Agnes AI",
+    baseUrl: "https://apihub.agnes-ai.com/v1",
+    apiKey: "",
+    models: [
+      { id: "agnes-image-2.0-flash", name: "Agnes Image 2.0 Flash", capability: "textToImage" },
+      { id: "agnes-image-2.0-flash", name: "Agnes Image 2.0 Flash Edit", capability: "imageToImage" },
+    ],
+  },
 ];
 
 export function providerCapabilityForNode(kind: string): ProviderCapability | null {

@@ -1,13 +1,12 @@
-use std::{
-    fs,
-    path::PathBuf,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{fs, path::PathBuf};
 use tauri::AppHandle;
 
 use super::{
+    image_provider::{
+        ImageProvider, ImageToImageInput, OpenAiCompatibleImageProvider, TextToImageInput,
+    },
     models::{RunResponse, WorkflowNodeKind, WorkflowSnapshot},
-    providers::{validate_ai_node_provider, ProviderCapability, ProviderConfig},
+    providers::{resolve_ai_node_provider, ProviderCapability, ProviderConfig},
     storage::generated_assets_dir,
 };
 
@@ -82,38 +81,63 @@ fn execute_node(
             Ok(format!("{} 输出图片路径", node.data.title))
         }
         WorkflowNodeKind::TextToImage => {
-            validate_ai_node_provider(
+            let provider = resolve_ai_node_provider(
                 providers,
                 node.data.provider_id.as_deref(),
                 node.data.model.as_deref(),
                 ProviderCapability::TextToImage,
             )?;
             let prompt = connected_text(snapshot, &node.id).or(node.data.prompt_override);
-            if prompt.unwrap_or_default().trim().is_empty() {
+            let prompt = prompt.unwrap_or_default();
+            if prompt.trim().is_empty() {
                 return Err("缺少 prompt 输入".to_string());
             }
-            let result_path = simulated_image_path(generated_dir, &node.id)?;
-            snapshot.nodes[node_index].data.result_path = Some(result_path.clone());
-            Ok(format!("{} 生成图片：{}", node.data.title, result_path))
+            let model = node.data.model.clone().unwrap_or_default();
+            let image_provider = OpenAiCompatibleImageProvider::new(provider, generated_dir)?;
+            let result = image_provider.text_to_image(TextToImageInput {
+                node_id: node.id,
+                model: model.clone(),
+                prompt,
+                size: size_from_aspect_ratio(node.data.aspect_ratio.as_deref()),
+                seed: parse_seed(node.data.seed.as_deref())?,
+            })?;
+            snapshot.nodes[node_index].data.result_path = Some(result.local_path.clone());
+            snapshot.nodes[node_index].data.result_url = Some(result.remote_url);
+            Ok(format!(
+                "{} 通过 {} / {} 生成图片：{}",
+                node.data.title, provider.name, model, result.local_path
+            ))
         }
         WorkflowNodeKind::ImageToImage => {
-            validate_ai_node_provider(
+            let provider = resolve_ai_node_provider(
                 providers,
                 node.data.provider_id.as_deref(),
                 node.data.model.as_deref(),
                 ProviderCapability::ImageToImage,
             )?;
             let prompt = connected_text(snapshot, &node.id).or(node.data.prompt_override);
-            let image = connected_image(snapshot, &node.id);
-            if image.unwrap_or_default().trim().is_empty() {
-                return Err("缺少图片输入".to_string());
-            }
-            if prompt.unwrap_or_default().trim().is_empty() {
+            let prompt = prompt.unwrap_or_default();
+            if prompt.trim().is_empty() {
                 return Err("缺少 prompt 输入".to_string());
             }
-            let result_path = simulated_image_path(generated_dir, &node.id)?;
-            snapshot.nodes[node_index].data.result_path = Some(result_path.clone());
-            Ok(format!("{} 生成图片：{}", node.data.title, result_path))
+            let image_url =
+                connected_image_url(snapshot, &node.id).ok_or_else(|| "缺少可用于 API 的图片 URL；当前图生图阶段仅支持远程图片 URL 或上游 AI 节点结果 URL".to_string())?;
+            let model = node.data.model.clone().unwrap_or_default();
+            let image_provider = OpenAiCompatibleImageProvider::new(provider, generated_dir)?;
+            let result = image_provider.image_to_image(ImageToImageInput {
+                node_id: node.id,
+                model: model.clone(),
+                prompt,
+                image_url,
+                size: size_from_aspect_ratio(node.data.aspect_ratio.as_deref()),
+                seed: parse_seed(node.data.seed.as_deref())?,
+            })?;
+            snapshot.nodes[node_index].data.result_path = Some(result.local_path.clone());
+            snapshot.nodes[node_index].data.result_url = Some(result.remote_url);
+            Ok(format!(
+                "{} 通过 {} / {} 生成图片：{}",
+                node.data.title, provider.name, model, result.local_path
+            ))
         }
         WorkflowNodeKind::Output => {
             let image =
@@ -122,6 +146,22 @@ fn execute_node(
             Ok(format!("{} 接收输出：{}", node.data.title, image))
         }
     }
+}
+
+fn connected_image_url(snapshot: &WorkflowSnapshot, target_id: &str) -> Option<String> {
+    snapshot
+        .edges
+        .iter()
+        .find(|edge| edge.target == target_id && edge.target_handle.as_deref() == Some("image-in"))
+        .and_then(|edge| snapshot.nodes.iter().find(|node| node.id == edge.source))
+        .and_then(|node| {
+            node.data.result_url.clone().or_else(|| {
+                node.data
+                    .image_path
+                    .clone()
+                    .filter(|value| is_remote_url(value))
+            })
+        })
 }
 
 fn connected_text(snapshot: &WorkflowSnapshot, target_id: &str) -> Option<String> {
@@ -151,13 +191,28 @@ fn connected_image(snapshot: &WorkflowSnapshot, target_id: &str) -> Option<Strin
         })
 }
 
-fn simulated_image_path(generated_dir: &PathBuf, node_id: &str) -> Result<String, String> {
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|error| error.to_string())?
-        .as_secs();
-    Ok(generated_dir
-        .join(format!("{}_{}.png", node_id, timestamp))
-        .to_string_lossy()
-        .into_owned())
+fn size_from_aspect_ratio(aspect_ratio: Option<&str>) -> Option<String> {
+    let size = match aspect_ratio.unwrap_or("1:1") {
+        "4:3" => "1024x768",
+        "3:4" => "768x1024",
+        "16:9" => "1024x576",
+        "9:16" => "576x1024",
+        _ => "1024x1024",
+    };
+    Some(size.to_string())
+}
+
+fn parse_seed(seed: Option<&str>) -> Result<Option<i64>, String> {
+    seed.filter(|value| !value.trim().is_empty())
+        .map(|value| {
+            value
+                .trim()
+                .parse::<i64>()
+                .map_err(|_| format!("Seed 必须是整数：{}", value))
+        })
+        .transpose()
+}
+
+fn is_remote_url(value: &str) -> bool {
+    value.starts_with("http://") || value.starts_with("https://")
 }

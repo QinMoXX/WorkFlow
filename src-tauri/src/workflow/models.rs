@@ -29,6 +29,7 @@ pub struct WorkflowNodeData {
     pub save_directory: Option<String>,
     pub last_output_path: Option<String>,
     pub result_path: Option<String>,
+    pub result_url: Option<String>,
     pub error: Option<String>,
 }
 

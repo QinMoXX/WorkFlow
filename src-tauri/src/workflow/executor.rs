@@ -7,11 +7,13 @@ use tauri::AppHandle;
 
 use super::{
     models::{RunResponse, WorkflowNodeKind, WorkflowSnapshot},
+    providers::{validate_ai_node_provider, ProviderCapability, ProviderConfig},
     storage::generated_assets_dir,
 };
 
 pub fn run_nodes(
     app: &AppHandle,
+    providers: &[ProviderConfig],
     snapshot: &mut WorkflowSnapshot,
     execution_order: Vec<String>,
 ) -> Result<RunResponse, String> {
@@ -29,7 +31,7 @@ pub fn run_nodes(
         snapshot.nodes[index].data.status = "running".to_string();
         snapshot.nodes[index].data.error = None;
 
-        match execute_node(snapshot, index, &generated_dir) {
+        match execute_node(snapshot, index, &generated_dir, providers) {
             Ok(log) => {
                 snapshot.nodes[index].data.status = "success".to_string();
                 logs.push(log);
@@ -59,6 +61,7 @@ fn execute_node(
     snapshot: &mut WorkflowSnapshot,
     node_index: usize,
     generated_dir: &PathBuf,
+    providers: &[ProviderConfig],
 ) -> Result<String, String> {
     let node = snapshot.nodes[node_index].clone();
 
@@ -79,6 +82,12 @@ fn execute_node(
             Ok(format!("{} 输出图片路径", node.data.title))
         }
         WorkflowNodeKind::TextToImage => {
+            validate_ai_node_provider(
+                providers,
+                node.data.provider_id.as_deref(),
+                node.data.model.as_deref(),
+                ProviderCapability::TextToImage,
+            )?;
             let prompt = connected_text(snapshot, &node.id).or(node.data.prompt_override);
             if prompt.unwrap_or_default().trim().is_empty() {
                 return Err("缺少 prompt 输入".to_string());
@@ -88,6 +97,12 @@ fn execute_node(
             Ok(format!("{} 生成图片：{}", node.data.title, result_path))
         }
         WorkflowNodeKind::ImageToImage => {
+            validate_ai_node_provider(
+                providers,
+                node.data.provider_id.as_deref(),
+                node.data.model.as_deref(),
+                ProviderCapability::ImageToImage,
+            )?;
             let prompt = connected_text(snapshot, &node.id).or(node.data.prompt_override);
             let image = connected_image(snapshot, &node.id);
             if image.unwrap_or_default().trim().is_empty() {

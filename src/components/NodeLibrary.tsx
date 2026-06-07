@@ -5,9 +5,10 @@ type NodeLibraryProps = {
   onAddNode: (kind: WorkflowNodeKind) => void;
   onRunWorkflow: () => void;
   onSaveWorkflow: () => void;
+  onOpenSettings: () => void;
 };
 
-export function NodeLibrary({ onAddNode, onRunWorkflow, onSaveWorkflow }: NodeLibraryProps) {
+export function NodeLibrary({ onAddNode, onRunWorkflow, onSaveWorkflow, onOpenSettings }: NodeLibraryProps) {
   return (
     <aside className="node-library">
       <div className="brand">
@@ -32,6 +33,9 @@ export function NodeLibrary({ onAddNode, onRunWorkflow, onSaveWorkflow }: NodeLi
       </button>
       <button className="secondary-action" type="button" onClick={onSaveWorkflow}>
         保存工作流
+      </button>
+      <button className="secondary-action" type="button" onClick={onOpenSettings}>
+        AI 配置
       </button>
     </aside>
   );

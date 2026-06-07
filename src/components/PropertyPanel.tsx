@@ -1,12 +1,15 @@
 import { WorkflowNode, WorkflowNodeData } from "../types/workflow";
+import { ProviderConfig } from "../types/provider";
+import { providerCapabilityForNode } from "../lib/providerPresets";
 
 type PropertyPanelProps = {
   node: WorkflowNode | null;
+  providers: ProviderConfig[];
   onChange: (patch: Partial<WorkflowNodeData>) => void;
   onRun: () => void;
 };
 
-export function PropertyPanel({ node, onChange, onRun }: PropertyPanelProps) {
+export function PropertyPanel({ node, providers, onChange, onRun }: PropertyPanelProps) {
   if (!node) {
     return (
       <div className="empty-panel">
@@ -17,6 +20,23 @@ export function PropertyPanel({ node, onChange, onRun }: PropertyPanelProps) {
   }
 
   const data = node.data;
+  const providerCapability = providerCapabilityForNode(data.kind);
+  const selectableProviders = providerCapability
+    ? providers.filter((provider) =>
+        provider.models.some((model) => model.capability === providerCapability),
+      )
+    : [];
+  const selectedProvider = providers.find((provider) => provider.id === data.providerId) ?? null;
+  const selectableModels =
+    selectedProvider && providerCapability
+      ? selectedProvider.models.filter((model) => model.capability === providerCapability)
+      : [];
+
+  const handleProviderChange = (providerId: string) => {
+    const provider = providers.find((item) => item.id === providerId);
+    const model = provider?.models.find((item) => item.capability === providerCapability);
+    onChange({ providerId, model: model?.id ?? "" });
+  };
 
   return (
     <div className="property-form">
@@ -61,14 +81,28 @@ export function PropertyPanel({ node, onChange, onRun }: PropertyPanelProps) {
         <>
           <label>
             供应商
-            <input
+            <select
               value={data.providerId ?? ""}
-              onChange={(event) => onChange({ providerId: event.target.value })}
-            />
+              onChange={(event) => handleProviderChange(event.target.value)}
+            >
+              <option value="">选择供应商预设</option>
+              {selectableProviders.map((provider) => (
+                <option key={provider.id} value={provider.id}>
+                  {provider.name || provider.id}
+                </option>
+              ))}
+            </select>
           </label>
           <label>
             模型
-            <input value={data.model ?? ""} onChange={(event) => onChange({ model: event.target.value })} />
+            <select value={data.model ?? ""} onChange={(event) => onChange({ model: event.target.value })}>
+              <option value="">选择模型</option>
+              {selectableModels.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.name || model.id}
+                </option>
+              ))}
+            </select>
           </label>
           <label>
             Prompt 覆盖

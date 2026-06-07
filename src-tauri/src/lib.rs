@@ -1,6 +1,9 @@
 mod workflow;
 
-use workflow::commands::{load_workflow, run_node, run_workflow, save_workflow};
+use workflow::commands::{
+    load_provider_configs, load_workflow, run_node, run_workflow, save_provider_configs,
+    save_workflow,
+};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -9,6 +12,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             save_workflow,
             load_workflow,
+            save_provider_configs,
+            load_provider_configs,
             run_node,
             run_workflow
         ])

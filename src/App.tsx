@@ -12,12 +12,15 @@ import {
   useNodesState,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { AiSettingsPanel } from "./components/AiSettingsPanel";
 import { NodeLibrary } from "./components/NodeLibrary";
 import { PropertyPanel } from "./components/PropertyPanel";
 import { RunLogPanel } from "./components/RunLogPanel";
 import { WorkflowNodeCard } from "./components/WorkflowNodeCard";
 import { createNode, initialEdges, initialNodes } from "./lib/nodeCatalog";
+import { defaultProviderConfigs, firstProviderPreset } from "./lib/providerPresets";
 import { fromSnapshot, inputType, outputType, toSnapshot } from "./lib/workflowGraph";
+import { ProviderConfig } from "./types/provider";
 import { RunResponse, WorkflowNodeData, WorkflowNodeKind, WorkflowSnapshot } from "./types/workflow";
 import "./App.css";
 
@@ -27,6 +30,8 @@ function App() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(initialNodes[0].id);
   const [logs, setLogs] = useState<string[]>(["工作流已就绪"]);
   const [isLogOpen, setIsLogOpen] = useState(true);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [providers, setProviders] = useState<ProviderConfig[]>(defaultProviderConfigs);
 
   const nodeTypes = useMemo(() => ({ workflowNode: WorkflowNodeCard }), []);
   const selectedNode = useMemo(
@@ -62,6 +67,17 @@ function App() {
       .catch((error) => appendLogs([`加载失败：${String(error)}`]));
   }, [appendLogs, applySnapshot]);
 
+  useEffect(() => {
+    invoke<ProviderConfig[]>("load_provider_configs")
+      .then((configs) => {
+        if (configs.length > 0) {
+          setProviders(configs);
+          appendLogs(["已加载 AI 配置"]);
+        }
+      })
+      .catch((error) => appendLogs([`AI 配置加载失败：${String(error)}`]));
+  }, [appendLogs]);
+
   const handleConnect = useCallback(
     (connection: Connection) => {
       const source = nodes.find((node) => node.id === connection.source);
@@ -89,6 +105,14 @@ function App() {
 
   const handleAddNode = (kind: WorkflowNodeKind) => {
     const nextNode = createNode(kind, nodes.length);
+    if (kind === "textToImage") {
+      const preset = firstProviderPreset(providers, "textToImage");
+      if (preset) nextNode.data = { ...nextNode.data, ...preset };
+    }
+    if (kind === "imageToImage") {
+      const preset = firstProviderPreset(providers, "imageToImage");
+      if (preset) nextNode.data = { ...nextNode.data, ...preset };
+    }
     setNodes((current) => [...current, nextNode]);
     setSelectedNodeId(nextNode.id);
   };
@@ -108,6 +132,17 @@ function App() {
       appendLogs(["已保存当前工作流"]);
     } catch (error) {
       appendLogs([`保存失败：${String(error)}`]);
+    }
+  };
+
+  const saveProviderConfigs = async (nextProviders: ProviderConfig[]) => {
+    try {
+      await invoke("save_provider_configs", { providers: nextProviders });
+      setProviders(nextProviders);
+      setIsSettingsOpen(false);
+      appendLogs(["已保存 AI 配置"]);
+    } catch (error) {
+      appendLogs([`AI 配置保存失败：${String(error)}`]);
     }
   };
 
@@ -152,6 +187,7 @@ function App() {
           onAddNode={handleAddNode}
           onRunWorkflow={runWorkflow}
           onSaveWorkflow={saveWorkflow}
+          onOpenSettings={() => setIsSettingsOpen(true)}
         />
 
         <section className="canvas-panel">
@@ -176,12 +212,19 @@ function App() {
         <aside className="properties-panel">
           <PropertyPanel
             node={selectedNode}
+            providers={providers}
             onChange={updateSelectedNode}
             onRun={() => selectedNode && runNode(selectedNode.id)}
           />
         </aside>
 
         <RunLogPanel logs={logs} isOpen={isLogOpen} onToggle={() => setIsLogOpen((value) => !value)} />
+        <AiSettingsPanel
+          isOpen={isSettingsOpen}
+          providers={providers}
+          onClose={() => setIsSettingsOpen(false)}
+          onSave={saveProviderConfigs}
+        />
       </main>
     </ReactFlowProvider>
   );

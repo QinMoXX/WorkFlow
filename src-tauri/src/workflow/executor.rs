@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -124,20 +125,21 @@ fn execute_node(
             if prompt.trim().is_empty() {
                 return Err("缺少 prompt 输入".to_string());
             }
-            let image_url =
-                connected_image_url(snapshot, &node.id).ok_or_else(|| "缺少可用于 API 的图片 URL；当前图生图阶段仅支持远程图片 URL 或上游 AI 节点结果 URL".to_string())?;
+            let image_source = connected_image_source(snapshot, &node.id)?;
             let model = node.data.model.clone().unwrap_or_default();
             let image_provider = OpenAiCompatibleImageProvider::new(provider, generated_dir)?;
             let result = image_provider.image_to_image(ImageToImageInput {
                 node_id: node.id,
                 model: model.clone(),
                 prompt,
-                image_url,
+                image_source,
                 size: size_from_aspect_ratio(node.data.aspect_ratio.as_deref()),
                 seed: parse_seed(node.data.seed.as_deref())?,
             })?;
             snapshot.nodes[node_index].data.result_path = Some(result.local_path.clone());
-            snapshot.nodes[node_index].data.result_url = Some(result.remote_url);
+            if !result.remote_url.is_empty() {
+                snapshot.nodes[node_index].data.result_url = Some(result.remote_url);
+            }
             Ok(format!(
                 "{} 通过 {} / {} 生成图片：{}",
                 node.data.title, provider.name, model, result.local_path
@@ -203,20 +205,65 @@ fn copy_output_image(
     Ok(destination.to_string_lossy().to_string())
 }
 
-fn connected_image_url(snapshot: &WorkflowSnapshot, target_id: &str) -> Option<String> {
-    snapshot
+fn connected_image_source(snapshot: &WorkflowSnapshot, target_id: &str) -> Result<String, String> {
+    let image = snapshot
         .edges
         .iter()
         .find(|edge| edge.target == target_id && edge.target_handle.as_deref() == Some("image-in"))
         .and_then(|edge| snapshot.nodes.iter().find(|node| node.id == edge.source))
         .and_then(|node| {
-            node.data.result_url.clone().or_else(|| {
-                node.data
-                    .image_path
-                    .clone()
-                    .filter(|value| is_remote_url(value))
-            })
+            node.data
+                .result_url
+                .clone()
+                .or_else(|| node.data.result_path.clone())
+                .or_else(|| node.data.image_path.clone())
+                .or_else(|| node.data.last_output_path.clone())
         })
+        .ok_or_else(|| "缺少图片输入".to_string())?;
+
+    image_to_api_source(&image)
+}
+
+fn image_to_api_source(image: &str) -> Result<String, String> {
+    if is_remote_url(image) || image.starts_with("data:image/") {
+        return Ok(image.to_string());
+    }
+
+    let path = Path::new(image);
+    if !path.exists() {
+        return Err(format!("图生图输入图片不存在：{}", image));
+    }
+    let bytes = fs::read(path).map_err(|error| format!("读取图生图输入图片失败：{}", error))?;
+    let mime_type = image_mime_type(path)?;
+
+    Ok(format!(
+        "data:{};base64,{}",
+        mime_type,
+        BASE64_STANDARD.encode(bytes)
+    ))
+}
+
+fn image_mime_type(path: &Path) -> Result<&'static str, String> {
+    match path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "jpg" | "jpeg" => Ok("image/jpeg"),
+        "png" => Ok("image/png"),
+        "webp" => Ok("image/webp"),
+        "gif" => Ok("image/gif"),
+        extension => Err(format!(
+            "图生图输入图片格式不支持：{}；支持 jpg、jpeg、png、webp、gif",
+            if extension.is_empty() {
+                "(无扩展名)"
+            } else {
+                extension
+            }
+        )),
+    }
 }
 
 fn connected_text(snapshot: &WorkflowSnapshot, target_id: &str) -> Option<String> {

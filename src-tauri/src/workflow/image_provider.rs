@@ -6,6 +6,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use reqwest::{blocking::Client, blocking::Response, Proxy, Url};
 use serde::{Deserialize, Serialize};
 
@@ -23,7 +24,7 @@ pub struct ImageToImageInput {
     pub node_id: String,
     pub model: String,
     pub prompt: String,
-    pub image_url: String,
+    pub image_source: String,
     pub size: Option<String>,
     pub seed: Option<i64>,
 }
@@ -74,6 +75,7 @@ struct ImageGenerationResponse {
 #[derive(Debug, Deserialize)]
 struct ImageGenerationData {
     url: Option<String>,
+    b64_json: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -144,12 +146,20 @@ impl<'a> OpenAiCompatibleImageProvider<'a> {
         let body: ImageGenerationResponse = response
             .json()
             .map_err(|error| format!("图片 API 响应解析失败：{}", error_chain(&error)))?;
-        let remote_url = body
+        let data = body
             .data
             .first()
-            .and_then(|item| item.url.clone())
-            .ok_or_else(|| "图片 API 响应缺少 data[0].url".to_string())?;
-        let local_path = self.download_image(node_id, &remote_url)?;
+            .ok_or_else(|| "图片 API 响应缺少 data[0]".to_string())?;
+
+        let (remote_url, local_path) = if let Some(remote_url) = data.url.clone() {
+            let local_path = self.download_image(node_id, &remote_url)?;
+            (remote_url, local_path)
+        } else if let Some(b64_json) = data.b64_json.as_deref() {
+            let local_path = self.save_base64_image(node_id, b64_json)?;
+            ("".to_string(), local_path)
+        } else {
+            return Err("图片 API 响应缺少 data[0].url 或 data[0].b64_json".to_string());
+        };
 
         Ok(ImageResult {
             remote_url,
@@ -177,6 +187,17 @@ impl<'a> OpenAiCompatibleImageProvider<'a> {
         let path = self
             .generated_dir
             .join(result_file_name(node_id, extension)?);
+        fs::write(&path, bytes).map_err(|error| error.to_string())?;
+
+        Ok(path.to_string_lossy().into_owned())
+    }
+
+    fn save_base64_image(&self, node_id: &str, b64_json: &str) -> Result<String, String> {
+        fs::create_dir_all(self.generated_dir).map_err(|error| error.to_string())?;
+        let bytes = BASE64_STANDARD
+            .decode(b64_json)
+            .map_err(|error| format!("解析 base64 图片失败：{}", error))?;
+        let path = self.generated_dir.join(result_file_name(node_id, "png")?);
         fs::write(&path, bytes).map_err(|error| error.to_string())?;
 
         Ok(path.to_string_lossy().into_owned())
@@ -232,7 +253,7 @@ impl ImageProvider for OpenAiCompatibleImageProvider<'_> {
                 seed: input.seed,
                 tags: Some(vec!["img2img".to_string()]),
                 extra_body: Some(ImageGenerationExtraBody {
-                    image: Some(vec![input.image_url]),
+                    image: Some(vec![input.image_source]),
                     response_format: Some("url".to_string()),
                 }),
             },

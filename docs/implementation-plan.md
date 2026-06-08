@@ -108,7 +108,7 @@
   - `prompt`
   - `size`
   - `seed`
-- `[~]` 图生图请求支持：
+- `[x]` 图生图请求支持：
   - `model`
   - `prompt`
   - `size`
@@ -120,10 +120,12 @@
 - `[x]` 将本地结果路径写回节点 `resultPath`，并记录远程 `resultUrl` 供下游图生图使用。
 - `[x]` API 错误、超时、响应格式错误写入运行日志。
 
-当前限制：
+兼容说明：
 
-- 图生图只支持远程图片 URL 或上游 AI 节点产生的 `resultUrl`。
-- 本地图片输入节点连接图生图时，如果 `imagePath` 不是 `http://` 或 `https://` URL，会提示缺少可用于 API 的图片 URL。后续阶段三需要实现本地图片导入、托管或供应商兼容上传策略。
+- 图生图优先使用上游 AI 节点产生的 `resultUrl`。
+- 如果输入是 `http://` 或 `https://` 图片 URL，会原样写入 `extra_body.image`。
+- 如果输入是本地图片路径，会读取文件并转换为 `data:image/...;base64,...` 写入 `extra_body.image`，用于兼容支持 data URL 的 OpenAI-compatible 供应商。
+- Agnes 文档描述 `extra_body.image` 为图片 URL；如果 Agnes 侧拒绝 data URL，后续需要在阶段三补充本地图片上传或可访问 URL 托管策略。
 
 验收标准：
 

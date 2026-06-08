@@ -20,7 +20,7 @@ import { RunLogPanel } from "./components/RunLogPanel";
 import { WorkflowNodeCard } from "./components/WorkflowNodeCard";
 import { createNode, initialEdges, initialNodes } from "./lib/nodeCatalog";
 import { defaultProviderConfigs, firstProviderPreset } from "./lib/providerPresets";
-import { fromSnapshot, inputType, outputType, toSnapshot } from "./lib/workflowGraph";
+import { findConnectionRule, fromSnapshot, toSnapshot } from "./lib/workflowGraph";
 import { ProviderConfig } from "./types/provider";
 import {
   RunResponse,
@@ -129,11 +129,24 @@ function App() {
   const handleConnect = useCallback(
     (connection: Connection) => {
       const source = nodes.find((node) => node.id === connection.source);
-      const sourceDataType = source ? outputType(source.data.kind) : null;
-      const targetDataType = inputType(connection.targetHandle);
+      const target = nodes.find((node) => node.id === connection.target);
+      if (connection.source === connection.target) {
+        appendLogs(["连线失败：不允许连接到同一个节点"]);
+        return;
+      }
 
-      if (!sourceDataType || sourceDataType !== targetDataType) {
-        appendLogs(["连线失败：端口类型不匹配"]);
+      const rule =
+        source && target
+          ? findConnectionRule(
+              source.data.kind,
+              connection.sourceHandle,
+              target.data.kind,
+              connection.targetHandle,
+            )
+          : null;
+
+      if (!rule) {
+        appendLogs(["连线失败：该节点端口组合不允许连接"]);
         return;
       }
 
@@ -142,7 +155,7 @@ function App() {
           {
             ...connection,
             id: `${connection.source}-${connection.sourceHandle}-${connection.target}-${connection.targetHandle}`,
-            data: { dataType: sourceDataType },
+            data: { dataType: rule.dataType },
           },
           current,
         ),
@@ -246,6 +259,20 @@ function App() {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={handleConnect}
+            isValidConnection={(connection) => {
+              if (connection.source === connection.target) return false;
+              const source = nodes.find((node) => node.id === connection.source);
+              const target = nodes.find((node) => node.id === connection.target);
+              if (!source || !target) return false;
+              return Boolean(
+                findConnectionRule(
+                  source.data.kind,
+                  connection.sourceHandle,
+                  target.data.kind,
+                  connection.targetHandle,
+                ),
+              );
+            }}
             onInit={setFlowInstance}
             onNodeClick={(_, node) => setSelectedNodeId(node.id)}
             onPaneClick={() => setSelectedNodeId(null)}

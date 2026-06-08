@@ -7,6 +7,75 @@ import {
   WorkflowSnapshot,
 } from "../types/workflow";
 
+export type WorkflowHandleId = "text-out" | "image-out" | "prompt-in" | "image-in";
+
+export type WorkflowConnectionRule = {
+  sourceKind: WorkflowNodeKind;
+  sourceHandle: WorkflowHandleId;
+  targetKind: WorkflowNodeKind;
+  targetHandle: WorkflowHandleId;
+  dataType: WorkflowDataType;
+};
+
+export const connectionRules: WorkflowConnectionRule[] = [
+  {
+    sourceKind: "textInput",
+    sourceHandle: "text-out",
+    targetKind: "textToImage",
+    targetHandle: "prompt-in",
+    dataType: "text",
+  },
+  {
+    sourceKind: "textInput",
+    sourceHandle: "text-out",
+    targetKind: "imageToImage",
+    targetHandle: "prompt-in",
+    dataType: "text",
+  },
+  {
+    sourceKind: "imageInput",
+    sourceHandle: "image-out",
+    targetKind: "imageToImage",
+    targetHandle: "image-in",
+    dataType: "image",
+  },
+  {
+    sourceKind: "imageInput",
+    sourceHandle: "image-out",
+    targetKind: "output",
+    targetHandle: "image-in",
+    dataType: "image",
+  },
+  {
+    sourceKind: "textToImage",
+    sourceHandle: "image-out",
+    targetKind: "imageToImage",
+    targetHandle: "image-in",
+    dataType: "image",
+  },
+  {
+    sourceKind: "textToImage",
+    sourceHandle: "image-out",
+    targetKind: "output",
+    targetHandle: "image-in",
+    dataType: "image",
+  },
+  {
+    sourceKind: "imageToImage",
+    sourceHandle: "image-out",
+    targetKind: "imageToImage",
+    targetHandle: "image-in",
+    dataType: "image",
+  },
+  {
+    sourceKind: "imageToImage",
+    sourceHandle: "image-out",
+    targetKind: "output",
+    targetHandle: "image-in",
+    dataType: "image",
+  },
+];
+
 export function outputType(kind: WorkflowNodeKind): WorkflowDataType | null {
   if (kind === "textInput") return "text";
   if (kind === "imageInput" || kind === "textToImage" || kind === "imageToImage") {
@@ -19,6 +88,23 @@ export function inputType(handleId: string | null | undefined): WorkflowDataType
   if (handleId === "prompt-in") return "text";
   if (handleId === "image-in") return "image";
   return null;
+}
+
+export function findConnectionRule(
+  sourceKind: WorkflowNodeKind,
+  sourceHandle: string | null | undefined,
+  targetKind: WorkflowNodeKind,
+  targetHandle: string | null | undefined,
+): WorkflowConnectionRule | null {
+  return (
+    connectionRules.find(
+      (rule) =>
+        rule.sourceKind === sourceKind &&
+        rule.sourceHandle === sourceHandle &&
+        rule.targetKind === targetKind &&
+        rule.targetHandle === targetHandle,
+    ) ?? null
+  );
 }
 
 export function nodeSummary(data: WorkflowNodeData) {

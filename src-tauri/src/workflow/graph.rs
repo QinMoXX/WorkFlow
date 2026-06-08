@@ -2,6 +2,73 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::models::{WorkflowDataType, WorkflowNode, WorkflowNodeKind, WorkflowSnapshot};
 
+struct ConnectionRule {
+    source_kind: WorkflowNodeKind,
+    source_handle: &'static str,
+    target_kind: WorkflowNodeKind,
+    target_handle: &'static str,
+    data_type: WorkflowDataType,
+}
+
+const CONNECTION_RULES: &[ConnectionRule] = &[
+    ConnectionRule {
+        source_kind: WorkflowNodeKind::TextInput,
+        source_handle: "text-out",
+        target_kind: WorkflowNodeKind::TextToImage,
+        target_handle: "prompt-in",
+        data_type: WorkflowDataType::Text,
+    },
+    ConnectionRule {
+        source_kind: WorkflowNodeKind::TextInput,
+        source_handle: "text-out",
+        target_kind: WorkflowNodeKind::ImageToImage,
+        target_handle: "prompt-in",
+        data_type: WorkflowDataType::Text,
+    },
+    ConnectionRule {
+        source_kind: WorkflowNodeKind::ImageInput,
+        source_handle: "image-out",
+        target_kind: WorkflowNodeKind::ImageToImage,
+        target_handle: "image-in",
+        data_type: WorkflowDataType::Image,
+    },
+    ConnectionRule {
+        source_kind: WorkflowNodeKind::ImageInput,
+        source_handle: "image-out",
+        target_kind: WorkflowNodeKind::Output,
+        target_handle: "image-in",
+        data_type: WorkflowDataType::Image,
+    },
+    ConnectionRule {
+        source_kind: WorkflowNodeKind::TextToImage,
+        source_handle: "image-out",
+        target_kind: WorkflowNodeKind::ImageToImage,
+        target_handle: "image-in",
+        data_type: WorkflowDataType::Image,
+    },
+    ConnectionRule {
+        source_kind: WorkflowNodeKind::TextToImage,
+        source_handle: "image-out",
+        target_kind: WorkflowNodeKind::Output,
+        target_handle: "image-in",
+        data_type: WorkflowDataType::Image,
+    },
+    ConnectionRule {
+        source_kind: WorkflowNodeKind::ImageToImage,
+        source_handle: "image-out",
+        target_kind: WorkflowNodeKind::ImageToImage,
+        target_handle: "image-in",
+        data_type: WorkflowDataType::Image,
+    },
+    ConnectionRule {
+        source_kind: WorkflowNodeKind::ImageToImage,
+        source_handle: "image-out",
+        target_kind: WorkflowNodeKind::Output,
+        target_handle: "image-in",
+        data_type: WorkflowDataType::Image,
+    },
+];
+
 pub fn validate_connections(snapshot: &WorkflowSnapshot) -> Result<(), String> {
     let nodes = node_map(snapshot);
 
@@ -13,13 +80,18 @@ pub fn validate_connections(snapshot: &WorkflowSnapshot) -> Result<(), String> {
             .get(&edge.target)
             .ok_or_else(|| format!("连线 {} 的目标节点不存在", edge.id))?;
 
-        let source_type =
-            output_type(&source.kind).ok_or_else(|| format!("节点 {} 没有输出端口", source.id))?;
-        let target_type = input_type(edge.target_handle.as_deref())
-            .ok_or_else(|| format!("节点 {} 的输入端口无效", target.id))?;
+        if edge.source == edge.target {
+            return Err(format!("连线 {} 不允许连接到同一个节点", edge.id));
+        }
 
-        if source_type != edge.data_type || target_type != edge.data_type {
-            return Err(format!("连线 {} 类型不匹配", edge.id));
+        if !is_allowed_connection(
+            source.kind,
+            edge.source_handle.as_deref(),
+            target.kind,
+            edge.target_handle.as_deref(),
+            edge.data_type,
+        ) {
+            return Err(format!("连线 {} 的节点端口组合不允许连接", edge.id));
         }
     }
 
@@ -96,22 +168,20 @@ pub fn execution_order_for_node(
         .collect())
 }
 
-fn output_type(kind: &WorkflowNodeKind) -> Option<WorkflowDataType> {
-    match kind {
-        WorkflowNodeKind::TextInput => Some(WorkflowDataType::Text),
-        WorkflowNodeKind::ImageInput
-        | WorkflowNodeKind::TextToImage
-        | WorkflowNodeKind::ImageToImage => Some(WorkflowDataType::Image),
-        WorkflowNodeKind::Output => None,
-    }
-}
-
-fn input_type(handle_id: Option<&str>) -> Option<WorkflowDataType> {
-    match handle_id {
-        Some("prompt-in") => Some(WorkflowDataType::Text),
-        Some("image-in") => Some(WorkflowDataType::Image),
-        _ => None,
-    }
+fn is_allowed_connection(
+    source_kind: WorkflowNodeKind,
+    source_handle: Option<&str>,
+    target_kind: WorkflowNodeKind,
+    target_handle: Option<&str>,
+    data_type: WorkflowDataType,
+) -> bool {
+    CONNECTION_RULES.iter().any(|rule| {
+        rule.source_kind == source_kind
+            && Some(rule.source_handle) == source_handle
+            && rule.target_kind == target_kind
+            && Some(rule.target_handle) == target_handle
+            && rule.data_type == data_type
+    })
 }
 
 fn node_map(snapshot: &WorkflowSnapshot) -> HashMap<String, &WorkflowNode> {

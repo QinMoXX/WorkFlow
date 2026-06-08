@@ -280,6 +280,14 @@ button {
   background: #edf7f5;
 }
 
+.image-context-menu .danger-menu-item {
+  color: #a12d2d;
+}
+
+.image-context-menu .danger-menu-item:hover {
+  background: #fff0f0;
+}
+
 .image-context-menu button:disabled {
   cursor: not-allowed;
   background: #f6f8f9;

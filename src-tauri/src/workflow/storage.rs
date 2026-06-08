@@ -93,10 +93,6 @@ pub fn show_path_in_folder(image_path: &str) -> Result<(), String> {
     if !path.exists() {
         return Err(format!("图片不存在：{}", image_path));
     }
-    let directory = path
-        .parent()
-        .ok_or_else(|| format!("无法定位图片所在目录：{}", image_path))?;
-
     #[cfg(target_os = "windows")]
     let status = Command::new("explorer")
         .arg(format!("/select,{}", path.display()))
@@ -106,7 +102,12 @@ pub fn show_path_in_folder(image_path: &str) -> Result<(), String> {
     let status = Command::new("open").arg("-R").arg(path).status();
 
     #[cfg(all(unix, not(target_os = "macos")))]
-    let status = Command::new("xdg-open").arg(directory).status();
+    let status = {
+        let directory = path
+            .parent()
+            .ok_or_else(|| format!("无法定位图片所在目录：{}", image_path))?;
+        Command::new("xdg-open").arg(directory).status()
+    };
 
     let status = status.map_err(|error| format!("打开文件夹失败：{}", error))?;
     if status.success() {

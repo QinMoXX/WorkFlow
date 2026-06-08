@@ -43,6 +43,12 @@ type NodeContextMenu = {
 
 type NodeContextMenuDetail = NodeContextMenu;
 
+type EdgeContextMenu = {
+  edgeId: string;
+  x: number;
+  y: number;
+};
+
 function App() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -51,6 +57,7 @@ function App() {
   const [isLogOpen, setIsLogOpen] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [nodeContextMenu, setNodeContextMenu] = useState<NodeContextMenu | null>(null);
+  const [edgeContextMenu, setEdgeContextMenu] = useState<EdgeContextMenu | null>(null);
   const [providers, setProviders] = useState<ProviderConfig[]>(defaultProviderConfigs);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<WorkflowNode, WorkflowEdge> | null>(null);
 
@@ -145,6 +152,7 @@ function App() {
       if (!node) return;
 
       setSelectedNodeId(detail.nodeId);
+      setEdgeContextMenu(null);
       setNodeContextMenu(detail);
     };
 
@@ -313,6 +321,7 @@ function App() {
       const imagePath = nodeResultImagePath(node.data);
       event.preventDefault();
       setSelectedNodeId(node.id);
+      setEdgeContextMenu(null);
       setNodeContextMenu({
         nodeId: node.id,
         imagePath,
@@ -322,6 +331,47 @@ function App() {
     },
     [],
   );
+
+  const openEdgeContextMenu = useCallback((event: MouseEvent, edge: WorkflowEdge) => {
+    event.preventDefault();
+    setSelectedNodeId(null);
+    setNodeContextMenu(null);
+    setEdgeContextMenu({
+      edgeId: edge.id,
+      x: event.clientX,
+      y: event.clientY,
+    });
+  }, []);
+
+  const closeContextMenus = () => {
+    setNodeContextMenu(null);
+    setEdgeContextMenu(null);
+  };
+
+  const deleteNode = (nodeId: string) => {
+    const node = nodes.find((item) => item.id === nodeId);
+    setNodes((current) => current.filter((item) => item.id !== nodeId));
+    setEdges((current) => current.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
+    setSelectedNodeId((current) => (current === nodeId ? null : current));
+    setNodeContextMenu(null);
+    appendLogs([`已删除节点：${node?.data.title ?? nodeId}`]);
+  };
+
+  const deleteContextNode = () => {
+    if (!nodeContextMenu) return;
+    deleteNode(nodeContextMenu.nodeId);
+  };
+
+  const deleteEdge = (edgeId: string) => {
+    setEdges((current) => current.filter((edge) => edge.id !== edgeId));
+    setEdgeContextMenu(null);
+    appendLogs([`已删除连线：${edgeId}`]);
+  };
+
+  const deleteContextEdge = () => {
+    if (!edgeContextMenu) return;
+    deleteEdge(edgeContextMenu.edgeId);
+  };
 
   const saveContextImage = async () => {
     if (!nodeContextMenu?.imagePath) return;
@@ -376,7 +426,7 @@ function App() {
 
   return (
     <ReactFlowProvider>
-      <main className="app-shell" onClick={() => setNodeContextMenu(null)}>
+      <main className="app-shell" onClick={closeContextMenus}>
         <NodeLibrary
           onAddNode={handleAddNode}
           onRunWorkflow={runWorkflow}
@@ -409,7 +459,11 @@ function App() {
             onInit={setFlowInstance}
             onNodeClick={(_, node) => setSelectedNodeId(node.id)}
             onNodeContextMenu={openImageContextMenu}
-            onPaneClick={() => setSelectedNodeId(null)}
+            onEdgeContextMenu={openEdgeContextMenu}
+            onPaneClick={() => {
+              setSelectedNodeId(null);
+              closeContextMenus();
+            }}
             fitView
             proOptions={{ hideAttribution: true }}
           >
@@ -446,6 +500,21 @@ function App() {
             </button>
             <button type="button" onClick={rerunContextNode}>
               重新运行该节点
+            </button>
+            <button type="button" className="danger-menu-item" onClick={deleteContextNode}>
+              删除节点
+            </button>
+          </div>
+        )}
+
+        {edgeContextMenu && (
+          <div
+            className="image-context-menu"
+            style={{ left: edgeContextMenu.x, top: edgeContextMenu.y }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button type="button" className="danger-menu-item" onClick={deleteContextEdge}>
+              删除连线
             </button>
           </div>
         )}

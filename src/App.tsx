@@ -34,14 +34,14 @@ import {
 } from "./types/workflow";
 import "./App.css";
 
-type ImageContextMenu = {
+type NodeContextMenu = {
   nodeId: string;
-  imagePath: string;
+  imagePath?: string;
   x: number;
   y: number;
 };
 
-type ImageContextMenuDetail = ImageContextMenu;
+type NodeContextMenuDetail = NodeContextMenu;
 
 function App() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
@@ -50,7 +50,7 @@ function App() {
   const [logs, setLogs] = useState<string[]>(["工作流已就绪"]);
   const [isLogOpen, setIsLogOpen] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [imageContextMenu, setImageContextMenu] = useState<ImageContextMenu | null>(null);
+  const [nodeContextMenu, setNodeContextMenu] = useState<NodeContextMenu | null>(null);
   const [providers, setProviders] = useState<ProviderConfig[]>(defaultProviderConfigs);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<WorkflowNode, WorkflowEdge> | null>(null);
 
@@ -140,17 +140,29 @@ function App() {
 
   useEffect(() => {
     const handleImageContextMenu = (event: Event) => {
-      const detail = (event as CustomEvent<ImageContextMenuDetail>).detail;
+      const detail = (event as CustomEvent<NodeContextMenuDetail>).detail;
       const node = nodes.find((item) => item.id === detail.nodeId);
       if (!node) return;
 
       setSelectedNodeId(detail.nodeId);
-      setImageContextMenu(detail);
+      setNodeContextMenu(detail);
     };
 
     window.addEventListener("workflow:image-context-menu", handleImageContextMenu);
     return () => window.removeEventListener("workflow:image-context-menu", handleImageContextMenu);
   }, [nodes]);
+
+  useEffect(() => {
+    const suppressNativeContextMenu = (event: Event) => {
+      if (isEditableElement(event.target)) return;
+      if (!(event.target instanceof HTMLElement)) return;
+      if (!event.target.closest(".app-shell")) return;
+      event.preventDefault();
+    };
+
+    window.addEventListener("contextmenu", suppressNativeContextMenu, { capture: true });
+    return () => window.removeEventListener("contextmenu", suppressNativeContextMenu, { capture: true });
+  }, []);
 
   const importImageToSelectedNode = useCallback(
     async (file: File) => {
@@ -299,11 +311,9 @@ function App() {
   const openImageContextMenu = useCallback(
     (event: MouseEvent, node: WorkflowNode) => {
       const imagePath = nodeResultImagePath(node.data);
-      if (!imagePath) return;
-
       event.preventDefault();
       setSelectedNodeId(node.id);
-      setImageContextMenu({
+      setNodeContextMenu({
         nodeId: node.id,
         imagePath,
         x: event.clientX,
@@ -314,59 +324,59 @@ function App() {
   );
 
   const saveContextImage = async () => {
-    if (!imageContextMenu) return;
+    if (!nodeContextMenu?.imagePath) return;
     try {
       const destinationPath = await save({
-        defaultPath: defaultImageFileName(imageContextMenu.imagePath),
+        defaultPath: defaultImageFileName(nodeContextMenu.imagePath),
         filters: [{ name: "Image", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
       });
       if (!destinationPath) return;
       const savedPath = await invoke<string>("save_image_as", {
-        imagePath: imageContextMenu.imagePath,
+        imagePath: nodeContextMenu.imagePath,
         destinationPath,
       });
       appendLogs([`已保存图片：${savedPath}`]);
     } catch (error) {
       appendLogs([`保存图片失败：${String(error)}`]);
     } finally {
-      setImageContextMenu(null);
+      setNodeContextMenu(null);
     }
   };
 
   const copyContextImage = async () => {
-    if (!imageContextMenu) return;
+    if (!nodeContextMenu?.imagePath) return;
     try {
-      await invoke("copy_image_to_clipboard", { imagePath: imageContextMenu.imagePath });
+      await invoke("copy_image_to_clipboard", { imagePath: nodeContextMenu.imagePath });
       appendLogs(["已复制图片到剪切板"]);
     } catch (error) {
       appendLogs([`复制图片失败：${String(error)}`]);
     } finally {
-      setImageContextMenu(null);
+      setNodeContextMenu(null);
     }
   };
 
   const showContextImageInFolder = async () => {
-    if (!imageContextMenu) return;
+    if (!nodeContextMenu?.imagePath) return;
     try {
-      await invoke("show_in_folder", { imagePath: imageContextMenu.imagePath });
+      await invoke("show_in_folder", { imagePath: nodeContextMenu.imagePath });
       appendLogs(["已打开图片所在文件夹"]);
     } catch (error) {
       appendLogs([`打开文件夹失败：${String(error)}`]);
     } finally {
-      setImageContextMenu(null);
+      setNodeContextMenu(null);
     }
   };
 
   const rerunContextNode = () => {
-    if (!imageContextMenu) return;
-    const nodeId = imageContextMenu.nodeId;
-    setImageContextMenu(null);
+    if (!nodeContextMenu) return;
+    const nodeId = nodeContextMenu.nodeId;
+    setNodeContextMenu(null);
     runNode(nodeId);
   };
 
   return (
     <ReactFlowProvider>
-      <main className="app-shell" onClick={() => setImageContextMenu(null)}>
+      <main className="app-shell" onClick={() => setNodeContextMenu(null)}>
         <NodeLibrary
           onAddNode={handleAddNode}
           onRunWorkflow={runWorkflow}
@@ -419,19 +429,19 @@ function App() {
           />
         </aside>
 
-        {imageContextMenu && (
+        {nodeContextMenu && (
           <div
             className="image-context-menu"
-            style={{ left: imageContextMenu.x, top: imageContextMenu.y }}
+            style={{ left: nodeContextMenu.x, top: nodeContextMenu.y }}
             onClick={(event) => event.stopPropagation()}
           >
-            <button type="button" onClick={saveContextImage}>
+            <button type="button" onClick={saveContextImage} disabled={!nodeContextMenu.imagePath}>
               保存图片
             </button>
-            <button type="button" onClick={copyContextImage}>
+            <button type="button" onClick={copyContextImage} disabled={!nodeContextMenu.imagePath}>
               复制图片
             </button>
-            <button type="button" onClick={showContextImageInFolder}>
+            <button type="button" onClick={showContextImageInFolder} disabled={!nodeContextMenu.imagePath}>
               在文件夹中显示
             </button>
             <button type="button" onClick={rerunContextNode}>

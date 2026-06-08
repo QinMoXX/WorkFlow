@@ -18,15 +18,13 @@ export function WorkflowNodeCard({ id, data, selected }: NodeProps<WorkflowNode>
     data.kind === "output" ? data.lastOutputPath : data.resultPath || data.imagePath;
 
   const handleContextMenu = (event: MouseEvent) => {
-    if (!contextImagePath) return;
-
     event.preventDefault();
     event.stopPropagation();
     window.dispatchEvent(
       new CustomEvent("workflow:image-context-menu", {
         detail: {
           nodeId: id,
-          imagePath: contextImagePath,
+          imagePath: contextImagePath || undefined,
           x: event.clientX,
           y: event.clientY,
         },

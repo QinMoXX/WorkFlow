@@ -1,10 +1,12 @@
 use std::{
+    error::Error,
     fs,
+    net::{IpAddr, SocketAddr},
     path::{Path, PathBuf},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use reqwest::blocking::Client;
+use reqwest::{blocking::Client, blocking::Response, Proxy, Url};
 use serde::{Deserialize, Serialize};
 
 use super::providers::ProviderConfig;
@@ -51,11 +53,17 @@ struct ImageGenerationRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     seed: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    response_format: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     tags: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    extra_body: Option<ImageGenerationExtraBody>,
+}
+
+#[derive(Debug, Serialize)]
+struct ImageGenerationExtraBody {
+    #[serde(skip_serializing_if = "Option::is_none")]
     image: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_format: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -68,17 +76,25 @@ struct ImageGenerationData {
     url: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct DnsResponse {
+    #[serde(rename = "Answer")]
+    answer: Option<Vec<DnsAnswer>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DnsAnswer {
+    #[serde(rename = "type")]
+    record_type: u16,
+    data: String,
+}
+
 impl<'a> OpenAiCompatibleImageProvider<'a> {
     pub fn new(provider: &'a ProviderConfig, generated_dir: &'a Path) -> Result<Self, String> {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(120))
-            .build()
-            .map_err(|error| error.to_string())?;
-
         Ok(Self {
             provider,
             generated_dir,
-            client,
+            client: build_client(provider, None)?,
         })
     }
 
@@ -93,12 +109,31 @@ impl<'a> OpenAiCompatibleImageProvider<'a> {
         );
 
         let response = self
-            .client
-            .post(endpoint)
-            .bearer_auth(self.provider.api_key.trim())
-            .json(&request)
-            .send()
-            .map_err(|error| format!("图片 API 请求失败：{}", error))?;
+            .send_image_request(&endpoint, &request)
+            .or_else(|error| {
+                if should_retry_with_public_dns(&error) {
+                    let fallback_client =
+                        build_public_dns_fallback_client(self.provider, &endpoint).map_err(
+                            |fallback_error| {
+                                format!(
+                                    "图片 API 请求失败：{}；公网 DNS 兜底失败：{}",
+                                    error_chain(&error),
+                                    fallback_error
+                                )
+                            },
+                        )?;
+                    return self
+                        .send_image_request_with_client(&fallback_client, &endpoint, &request)
+                        .map_err(|retry_error| {
+                            format!(
+                                "图片 API 请求失败：{}；公网 DNS 兜底重试失败：{}",
+                                error_chain(&error),
+                                error_chain(&retry_error)
+                            )
+                        });
+                }
+                Err(format!("图片 API 请求失败：{}", error_chain(&error)))
+            })?;
 
         let status = response.status();
         if !status.is_success() {
@@ -108,7 +143,7 @@ impl<'a> OpenAiCompatibleImageProvider<'a> {
 
         let body: ImageGenerationResponse = response
             .json()
-            .map_err(|error| format!("图片 API 响应解析失败：{}", error))?;
+            .map_err(|error| format!("图片 API 响应解析失败：{}", error_chain(&error)))?;
         let remote_url = body
             .data
             .first()
@@ -129,7 +164,7 @@ impl<'a> OpenAiCompatibleImageProvider<'a> {
             .client
             .get(remote_url)
             .send()
-            .map_err(|error| format!("下载生成图片失败：{}", error))?;
+            .map_err(|error| format!("下载生成图片失败：{}", error_chain(&error)))?;
         let status = response.status();
         if !status.is_success() {
             return Err(format!("下载生成图片返回错误：{}", status));
@@ -138,13 +173,34 @@ impl<'a> OpenAiCompatibleImageProvider<'a> {
         let extension = image_extension(response.headers().get(reqwest::header::CONTENT_TYPE));
         let bytes = response
             .bytes()
-            .map_err(|error| format!("读取生成图片内容失败：{}", error))?;
+            .map_err(|error| format!("读取生成图片内容失败：{}", error_chain(&error)))?;
         let path = self
             .generated_dir
             .join(result_file_name(node_id, extension)?);
         fs::write(&path, bytes).map_err(|error| error.to_string())?;
 
         Ok(path.to_string_lossy().into_owned())
+    }
+
+    fn send_image_request(
+        &self,
+        endpoint: &str,
+        request: &ImageGenerationRequest,
+    ) -> Result<Response, reqwest::Error> {
+        self.send_image_request_with_client(&self.client, endpoint, request)
+    }
+
+    fn send_image_request_with_client(
+        &self,
+        client: &Client,
+        endpoint: &str,
+        request: &ImageGenerationRequest,
+    ) -> Result<Response, reqwest::Error> {
+        client
+            .post(endpoint)
+            .bearer_auth(self.provider.api_key.trim())
+            .json(request)
+            .send()
     }
 }
 
@@ -157,9 +213,11 @@ impl ImageProvider for OpenAiCompatibleImageProvider<'_> {
                 prompt: input.prompt,
                 size: input.size,
                 seed: input.seed,
-                response_format: Some("url".to_string()),
                 tags: None,
-                image: None,
+                extra_body: Some(ImageGenerationExtraBody {
+                    image: None,
+                    response_format: Some("url".to_string()),
+                }),
             },
         )
     }
@@ -172,9 +230,11 @@ impl ImageProvider for OpenAiCompatibleImageProvider<'_> {
                 prompt: input.prompt,
                 size: input.size,
                 seed: input.seed,
-                response_format: Some("url".to_string()),
                 tags: Some(vec!["img2img".to_string()]),
-                image: Some(vec![input.image_url]),
+                extra_body: Some(ImageGenerationExtraBody {
+                    image: Some(vec![input.image_url]),
+                    response_format: Some("url".to_string()),
+                }),
             },
         )
     }
@@ -213,4 +273,96 @@ fn sanitize_node_id(node_id: &str) -> String {
             }
         })
         .collect()
+}
+
+fn error_chain(error: &dyn Error) -> String {
+    let mut parts = vec![error.to_string()];
+    let mut source = error.source();
+    while let Some(next) = source {
+        parts.push(next.to_string());
+        source = next.source();
+    }
+    parts.join("；原因：")
+}
+
+fn build_client(
+    provider: &ProviderConfig,
+    resolved_endpoint: Option<(&str, SocketAddr)>,
+) -> Result<Client, String> {
+    let mut client_builder = Client::builder()
+        .timeout(Duration::from_secs(120))
+        .connect_timeout(Duration::from_secs(20))
+        .http1_only();
+
+    if let Some(proxy_url) = provider
+        .proxy_url
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        let proxy = Proxy::all(proxy_url.trim())
+            .map_err(|error| format!("代理地址无效：{}", error_chain(&error)))?;
+        client_builder = client_builder.proxy(proxy);
+    }
+
+    if let Some((host, address)) = resolved_endpoint {
+        client_builder = client_builder.resolve(host, address);
+    }
+
+    client_builder
+        .build()
+        .map_err(|error| format!("创建 HTTP 客户端失败：{}", error_chain(&error)))
+}
+
+fn build_public_dns_fallback_client(
+    provider: &ProviderConfig,
+    endpoint: &str,
+) -> Result<Client, String> {
+    let url = Url::parse(endpoint).map_err(|error| error.to_string())?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| "API 地址缺少 host".to_string())?;
+    let port = url
+        .port_or_known_default()
+        .ok_or_else(|| "API 地址缺少端口".to_string())?;
+    let ip = resolve_public_ipv4(host)?;
+
+    build_client(
+        provider,
+        Some((host, SocketAddr::new(IpAddr::V4(ip), port))),
+    )
+}
+
+fn resolve_public_ipv4(host: &str) -> Result<std::net::Ipv4Addr, String> {
+    let client = Client::builder()
+        .timeout(Duration::from_secs(15))
+        .connect_timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|error| format!("创建 DNS 客户端失败：{}", error_chain(&error)))?;
+    let response = client
+        .get("https://cloudflare-dns.com/dns-query")
+        .header(reqwest::header::ACCEPT, "application/dns-json")
+        .query(&[("name", host), ("type", "A")])
+        .send()
+        .map_err(|error| format!("公网 DNS 查询失败：{}", error_chain(&error)))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("公网 DNS 查询返回错误：{}", status));
+    }
+
+    let body: DnsResponse = response
+        .json()
+        .map_err(|error| format!("公网 DNS 响应解析失败：{}", error_chain(&error)))?;
+    body.answer
+        .unwrap_or_default()
+        .into_iter()
+        .find(|answer| answer.record_type == 1)
+        .and_then(|answer| answer.data.parse().ok())
+        .ok_or_else(|| format!("公网 DNS 未返回 {} 的 A 记录", host))
+}
+
+fn should_retry_with_public_dns(error: &reqwest::Error) -> bool {
+    let message = error_chain(error);
+    message.contains("client error (Connect)")
+        || message.contains("tls handshake eof")
+        || message.contains("unexpected eof")
 }

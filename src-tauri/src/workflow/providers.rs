@@ -25,6 +25,8 @@ pub struct ProviderConfig {
     pub name: String,
     pub base_url: String,
     pub api_key: String,
+    #[serde(default)]
+    pub proxy_url: Option<String>,
     pub models: Vec<ProviderModel>,
 }
 
@@ -56,6 +58,7 @@ fn default_provider_configs() -> Vec<ProviderConfig> {
             name: "OpenAI".to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
             api_key: String::new(),
+            proxy_url: None,
             models: vec![
                 ProviderModel {
                     id: "gpt-image-1".to_string(),
@@ -74,6 +77,7 @@ fn default_provider_configs() -> Vec<ProviderConfig> {
             name: "Agnes AI".to_string(),
             base_url: "https://apihub.agnes-ai.com/v1".to_string(),
             api_key: String::new(),
+            proxy_url: None,
             models: vec![
                 ProviderModel {
                     id: "agnes-image-2.0-flash".to_string(),

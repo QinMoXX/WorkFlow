@@ -6,6 +6,7 @@ export const defaultProviderConfigs: ProviderConfig[] = [
     name: "OpenAI",
     baseUrl: "https://api.openai.com/v1",
     apiKey: "",
+    proxyUrl: "",
     models: [
       { id: "gpt-image-1", name: "GPT Image 1", capability: "textToImage" },
       { id: "gpt-image-1", name: "GPT Image 1 Edit", capability: "imageToImage" },
@@ -16,6 +17,7 @@ export const defaultProviderConfigs: ProviderConfig[] = [
     name: "Agnes AI",
     baseUrl: "https://apihub.agnes-ai.com/v1",
     apiKey: "",
+    proxyUrl: "",
     models: [
       { id: "agnes-image-2.0-flash", name: "Agnes Image 2.0 Flash", capability: "textToImage" },
       { id: "agnes-image-2.0-flash", name: "Agnes Image 2.0 Flash Edit", capability: "imageToImage" },

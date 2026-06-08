@@ -20,6 +20,7 @@ function createProvider(): ProviderConfig {
     name: "新供应商",
     baseUrl: "",
     apiKey: "",
+    proxyUrl: "",
     models: [],
   };
 }
@@ -177,6 +178,14 @@ export function AiSettingsPanel({ isOpen, providers, onClose, onSave }: AiSettin
                   value={selectedProvider.apiKey}
                   onChange={(event) => updateProvider(selectedProvider.id, { apiKey: event.target.value })}
                   placeholder="sk-..."
+                />
+              </label>
+              <label>
+                代理地址
+                <input
+                  value={selectedProvider.proxyUrl ?? ""}
+                  onChange={(event) => updateProvider(selectedProvider.id, { proxyUrl: event.target.value })}
+                  placeholder="http://127.0.0.1:7890"
                 />
               </label>
 

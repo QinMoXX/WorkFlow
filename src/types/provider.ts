@@ -11,5 +11,6 @@ export type ProviderConfig = {
   name: string;
   baseUrl: string;
   apiKey: string;
+  proxyUrl?: string;
   models: ProviderModel[];
 };

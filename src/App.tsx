@@ -6,6 +6,7 @@ import {
   Controls,
   MiniMap,
   ReactFlow,
+  ReactFlowInstance,
   ReactFlowProvider,
   addEdge,
   useEdgesState,
@@ -21,7 +22,14 @@ import { createNode, initialEdges, initialNodes } from "./lib/nodeCatalog";
 import { defaultProviderConfigs, firstProviderPreset } from "./lib/providerPresets";
 import { fromSnapshot, inputType, outputType, toSnapshot } from "./lib/workflowGraph";
 import { ProviderConfig } from "./types/provider";
-import { RunResponse, WorkflowNodeData, WorkflowNodeKind, WorkflowSnapshot } from "./types/workflow";
+import {
+  RunResponse,
+  WorkflowEdge,
+  WorkflowNode,
+  WorkflowNodeData,
+  WorkflowNodeKind,
+  WorkflowSnapshot,
+} from "./types/workflow";
 import "./App.css";
 
 function App() {
@@ -32,6 +40,7 @@ function App() {
   const [isLogOpen, setIsLogOpen] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [providers, setProviders] = useState<ProviderConfig[]>(defaultProviderConfigs);
+  const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<WorkflowNode, WorkflowEdge> | null>(null);
 
   const nodeTypes = useMemo(() => ({ workflowNode: WorkflowNodeCard }), []);
   const selectedNode = useMemo(
@@ -77,6 +86,45 @@ function App() {
       })
       .catch((error) => appendLogs([`AI 配置加载失败：${String(error)}`]));
   }, [appendLogs]);
+
+  useEffect(() => {
+    const handlePaste = async (event: ClipboardEvent) => {
+      if (isEditableElement(event.target)) return;
+
+      const imageFile = Array.from(event.clipboardData?.items ?? [])
+        .find((item) => item.kind === "file" && item.type.startsWith("image/"))
+        ?.getAsFile();
+      if (!imageFile) return;
+
+      event.preventDefault();
+
+      try {
+        const dataUrl = await readFileAsDataUrl(imageFile);
+        const imagePath = await invoke<string>("import_clipboard_image", { dataUrl });
+        const node = createNode("imageInput", nodes.length);
+        const position = flowInstance
+          ? flowInstance.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 })
+          : node.position;
+
+        node.position = position;
+        node.data = {
+          ...node.data,
+          title: "粘贴图片",
+          status: "success",
+          imagePath,
+          resultPath: imagePath,
+        };
+        setNodes((current) => [...current, node]);
+        setSelectedNodeId(node.id);
+        appendLogs([`已从剪切板导入图片：${imagePath}`]);
+      } catch (error) {
+        appendLogs([`剪切板图片导入失败：${String(error)}`]);
+      }
+    };
+
+    window.addEventListener("paste", handlePaste);
+    return () => window.removeEventListener("paste", handlePaste);
+  }, [appendLogs, flowInstance, nodes.length, setNodes]);
 
   const handleConnect = useCallback(
     (connection: Connection) => {
@@ -191,13 +239,14 @@ function App() {
         />
 
         <section className="canvas-panel">
-          <ReactFlow
+          <ReactFlow<WorkflowNode, WorkflowEdge>
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={handleConnect}
+            onInit={setFlowInstance}
             onNodeClick={(_, node) => setSelectedNodeId(node.id)}
             onPaneClick={() => setSelectedNodeId(null)}
             fitView
@@ -228,6 +277,21 @@ function App() {
       </main>
     </ReactFlowProvider>
   );
+}
+
+function isEditableElement(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  return ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error("读取剪切板图片失败"));
+    reader.readAsDataURL(file);
+  });
 }
 
 export default App;

@@ -8,7 +8,7 @@ use super::{
         load_provider_configs as load_provider_config_list,
         save_provider_configs as save_provider_config_list, ProviderConfig,
     },
-    storage::{load_workflow_snapshot, save_workflow_snapshot},
+    storage::{load_workflow_snapshot, save_imported_data_url, save_workflow_snapshot},
 };
 
 #[tauri::command]
@@ -19,6 +19,11 @@ pub fn save_workflow(app: AppHandle, snapshot: WorkflowSnapshot) -> Result<(), S
 #[tauri::command]
 pub fn load_workflow(app: AppHandle) -> Result<Option<WorkflowSnapshot>, String> {
     load_workflow_snapshot(&app)
+}
+
+#[tauri::command]
+pub fn import_clipboard_image(app: AppHandle, data_url: String) -> Result<String, String> {
+    save_imported_data_url(&app, &data_url)
 }
 
 #[tauri::command]

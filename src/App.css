@@ -180,6 +180,30 @@ button {
   -webkit-line-clamp: 2;
 }
 
+.node-image-preview {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+}
+
+.node-image-preview img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border: 1px solid #d8dee4;
+  border-radius: 6px;
+  background: #eef1f4;
+  object-fit: cover;
+}
+
+.node-image-preview figcaption {
+  overflow: hidden;
+  color: #68727d;
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .status-dot {
   width: 9px;
   height: 9px;

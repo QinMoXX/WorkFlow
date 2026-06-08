@@ -9,7 +9,7 @@ export const nodeTemplates: Array<{
   { kind: "imageInput", title: "图片输入", description: "引用本地图片路径" },
   { kind: "textToImage", title: "文生图", description: "文本生成图片" },
   { kind: "imageToImage", title: "图生图", description: "图片与文本编辑" },
-  { kind: "output", title: "输出", description: "保存或查看最终图片" },
+  { kind: "output", title: "输出", description: "自动保存上游图片" },
 ];
 
 export const initialNodes: WorkflowNode[] = [

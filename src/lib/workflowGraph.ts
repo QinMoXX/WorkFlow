@@ -26,7 +26,7 @@ export function nodeSummary(data: WorkflowNodeData) {
   if (data.kind === "imageInput") return data.imagePath || "选择或粘贴图片路径";
   if (data.kind === "textToImage") return `${data.providerId || "provider"} / ${data.model || "model"}`;
   if (data.kind === "imageToImage") return `strength ${data.strength ?? 0.65}`;
-  return data.saveDirectory || "等待图片输入";
+  return data.saveDirectory ? `保存到 ${data.saveDirectory}` : "等待图片输入";
 }
 
 export function toSnapshot(nodes: WorkflowNode[], edges: WorkflowEdge[]): WorkflowSnapshot {

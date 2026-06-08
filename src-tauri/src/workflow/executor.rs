@@ -1,4 +1,8 @@
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tauri::AppHandle;
 
 use super::{
@@ -142,10 +146,61 @@ fn execute_node(
         WorkflowNodeKind::Output => {
             let image =
                 connected_image(snapshot, &node.id).ok_or_else(|| "缺少图片输入".to_string())?;
-            snapshot.nodes[node_index].data.last_output_path = Some(image.clone());
-            Ok(format!("{} 接收输出：{}", node.data.title, image))
+            let output_path = match node.data.save_directory.as_deref() {
+                Some(directory) if !directory.trim().is_empty() => {
+                    copy_output_image(&image, directory.trim(), &node.id)?
+                }
+                _ => image.clone(),
+            };
+            snapshot.nodes[node_index].data.last_output_path = Some(output_path.clone());
+
+            if output_path == image {
+                Ok(format!("{} 接收输出：{}", node.data.title, output_path))
+            } else {
+                Ok(format!("{} 保存输出：{}", node.data.title, output_path))
+            }
         }
     }
+}
+
+fn copy_output_image(
+    image_path: &str,
+    save_directory: &str,
+    node_id: &str,
+) -> Result<String, String> {
+    if is_remote_url(image_path) {
+        return Err("输出节点当前只能保存本地图片路径，不能直接保存远程 URL".to_string());
+    }
+
+    let source = Path::new(image_path);
+    if !source.exists() {
+        return Err(format!("输出图片不存在：{}", image_path));
+    }
+
+    let directory = Path::new(save_directory);
+    fs::create_dir_all(directory)
+        .map_err(|error| format!("创建输出目录失败：{}；原因：{}", save_directory, error))?;
+
+    let extension = source
+        .extension()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("png");
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_millis();
+    let destination = directory.join(format!("{}-{}.{}", node_id, timestamp, extension));
+
+    fs::copy(source, &destination).map_err(|error| {
+        format!(
+            "保存输出图片失败：{}；原因：{}",
+            destination.display(),
+            error
+        )
+    })?;
+
+    Ok(destination.to_string_lossy().to_string())
 }
 
 fn connected_image_url(snapshot: &WorkflowSnapshot, target_id: &str) -> Option<String> {

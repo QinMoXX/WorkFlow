@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
 import {
   Background,
   Connection,
@@ -24,6 +25,7 @@ import { findConnectionRule, fromSnapshot, toSnapshot } from "./lib/workflowGrap
 import { ProviderConfig } from "./types/provider";
 import {
   RunResponse,
+  ImportedImage,
   WorkflowEdge,
   WorkflowNode,
   WorkflowNodeData,
@@ -32,6 +34,15 @@ import {
 } from "./types/workflow";
 import "./App.css";
 
+type ImageContextMenu = {
+  nodeId: string;
+  imagePath: string;
+  x: number;
+  y: number;
+};
+
+type ImageContextMenuDetail = ImageContextMenu;
+
 function App() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -39,6 +50,7 @@ function App() {
   const [logs, setLogs] = useState<string[]>(["工作流已就绪"]);
   const [isLogOpen, setIsLogOpen] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [imageContextMenu, setImageContextMenu] = useState<ImageContextMenu | null>(null);
   const [providers, setProviders] = useState<ProviderConfig[]>(defaultProviderConfigs);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<WorkflowNode, WorkflowEdge> | null>(null);
 
@@ -99,8 +111,7 @@ function App() {
       event.preventDefault();
 
       try {
-        const dataUrl = await readFileAsDataUrl(imageFile);
-        const imagePath = await invoke<string>("import_clipboard_image", { dataUrl });
+        const imported = await importImageFileData("import_clipboard_image", imageFile);
         const node = createNode("imageInput", nodes.length);
         const position = flowInstance
           ? flowInstance.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 })
@@ -111,12 +122,13 @@ function App() {
           ...node.data,
           title: "粘贴图片",
           status: "success",
-          imagePath,
-          resultPath: imagePath,
+          imagePath: imported.imagePath,
+          thumbnailPath: imported.thumbnailPath ?? undefined,
+          resultPath: imported.imagePath,
         };
         setNodes((current) => [...current, node]);
         setSelectedNodeId(node.id);
-        appendLogs([`已从剪切板导入图片：${imagePath}`]);
+        appendLogs([`已从剪切板导入图片：${imported.imagePath}`]);
       } catch (error) {
         appendLogs([`剪切板图片导入失败：${String(error)}`]);
       }
@@ -125,6 +137,49 @@ function App() {
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
   }, [appendLogs, flowInstance, nodes.length, setNodes]);
+
+  useEffect(() => {
+    const handleImageContextMenu = (event: Event) => {
+      const detail = (event as CustomEvent<ImageContextMenuDetail>).detail;
+      const node = nodes.find((item) => item.id === detail.nodeId);
+      if (!node) return;
+
+      setSelectedNodeId(detail.nodeId);
+      setImageContextMenu(detail);
+    };
+
+    window.addEventListener("workflow:image-context-menu", handleImageContextMenu);
+    return () => window.removeEventListener("workflow:image-context-menu", handleImageContextMenu);
+  }, [nodes]);
+
+  const importImageToSelectedNode = useCallback(
+    async (file: File) => {
+      if (!selectedNodeId) return;
+      try {
+        const imported = await importImageFileData("import_image_data_url", file);
+        setNodes((current) =>
+          current.map((node) =>
+            node.id === selectedNodeId
+              ? {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    status: "success",
+                    imagePath: imported.imagePath,
+                    thumbnailPath: imported.thumbnailPath ?? undefined,
+                    resultPath: imported.imagePath,
+                  },
+                }
+              : node,
+          ),
+        );
+        appendLogs([`已导入本地图片：${imported.imagePath}`]);
+      } catch (error) {
+        appendLogs([`导入本地图片失败：${String(error)}`]);
+      }
+    },
+    [appendLogs, selectedNodeId, setNodes],
+  );
 
   const handleConnect = useCallback(
     (connection: Connection) => {
@@ -241,9 +296,77 @@ function App() {
     }
   };
 
+  const openImageContextMenu = useCallback(
+    (event: MouseEvent, node: WorkflowNode) => {
+      const imagePath = nodeResultImagePath(node.data);
+      if (!imagePath) return;
+
+      event.preventDefault();
+      setSelectedNodeId(node.id);
+      setImageContextMenu({
+        nodeId: node.id,
+        imagePath,
+        x: event.clientX,
+        y: event.clientY,
+      });
+    },
+    [],
+  );
+
+  const saveContextImage = async () => {
+    if (!imageContextMenu) return;
+    try {
+      const destinationPath = await save({
+        defaultPath: defaultImageFileName(imageContextMenu.imagePath),
+        filters: [{ name: "Image", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
+      });
+      if (!destinationPath) return;
+      const savedPath = await invoke<string>("save_image_as", {
+        imagePath: imageContextMenu.imagePath,
+        destinationPath,
+      });
+      appendLogs([`已保存图片：${savedPath}`]);
+    } catch (error) {
+      appendLogs([`保存图片失败：${String(error)}`]);
+    } finally {
+      setImageContextMenu(null);
+    }
+  };
+
+  const copyContextImage = async () => {
+    if (!imageContextMenu) return;
+    try {
+      await invoke("copy_image_to_clipboard", { imagePath: imageContextMenu.imagePath });
+      appendLogs(["已复制图片到剪切板"]);
+    } catch (error) {
+      appendLogs([`复制图片失败：${String(error)}`]);
+    } finally {
+      setImageContextMenu(null);
+    }
+  };
+
+  const showContextImageInFolder = async () => {
+    if (!imageContextMenu) return;
+    try {
+      await invoke("show_in_folder", { imagePath: imageContextMenu.imagePath });
+      appendLogs(["已打开图片所在文件夹"]);
+    } catch (error) {
+      appendLogs([`打开文件夹失败：${String(error)}`]);
+    } finally {
+      setImageContextMenu(null);
+    }
+  };
+
+  const rerunContextNode = () => {
+    if (!imageContextMenu) return;
+    const nodeId = imageContextMenu.nodeId;
+    setImageContextMenu(null);
+    runNode(nodeId);
+  };
+
   return (
     <ReactFlowProvider>
-      <main className="app-shell">
+      <main className="app-shell" onClick={() => setImageContextMenu(null)}>
         <NodeLibrary
           onAddNode={handleAddNode}
           onRunWorkflow={runWorkflow}
@@ -275,6 +398,7 @@ function App() {
             }}
             onInit={setFlowInstance}
             onNodeClick={(_, node) => setSelectedNodeId(node.id)}
+            onNodeContextMenu={openImageContextMenu}
             onPaneClick={() => setSelectedNodeId(null)}
             fitView
             proOptions={{ hideAttribution: true }}
@@ -290,9 +414,31 @@ function App() {
             node={selectedNode}
             providers={providers}
             onChange={updateSelectedNode}
+            onImportImage={importImageToSelectedNode}
             onRun={() => selectedNode && runNode(selectedNode.id)}
           />
         </aside>
+
+        {imageContextMenu && (
+          <div
+            className="image-context-menu"
+            style={{ left: imageContextMenu.x, top: imageContextMenu.y }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button type="button" onClick={saveContextImage}>
+              保存图片
+            </button>
+            <button type="button" onClick={copyContextImage}>
+              复制图片
+            </button>
+            <button type="button" onClick={showContextImageInFolder}>
+              在文件夹中显示
+            </button>
+            <button type="button" onClick={rerunContextNode}>
+              重新运行该节点
+            </button>
+          </div>
+        )}
 
         <RunLogPanel logs={logs} isOpen={isLogOpen} onToggle={() => setIsLogOpen((value) => !value)} />
         <AiSettingsPanel
@@ -319,6 +465,53 @@ function readFileAsDataUrl(file: File) {
     reader.onerror = () => reject(reader.error ?? new Error("读取剪切板图片失败"));
     reader.readAsDataURL(file);
   });
+}
+
+async function importImageFileData(commandName: string, file: File) {
+  const dataUrl = await readFileAsDataUrl(file);
+  const thumbnailDataUrl = await createThumbnailDataUrl(file);
+  return invoke<ImportedImage>(commandName, { dataUrl, thumbnailDataUrl });
+}
+
+function createThumbnailDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const maxSize = 420;
+      const scale = Math.min(1, maxSize / Math.max(image.naturalWidth, image.naturalHeight));
+      const width = Math.max(1, Math.round(image.naturalWidth * scale));
+      const height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        reject(new Error("无法创建缩略图"));
+        return;
+      }
+      context.drawImage(image, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("读取图片缩略图失败"));
+    };
+    image.src = objectUrl;
+  });
+}
+
+function nodeResultImagePath(data: WorkflowNodeData) {
+  if (data.kind === "output") return data.lastOutputPath;
+  return data.resultPath || data.imagePath;
+}
+
+function defaultImageFileName(imagePath: string) {
+  const name = imagePath.split(/[\\/]/).pop();
+  if (name && name.includes(".")) return name;
+  return "workflow-image.png";
 }
 
 export default App;

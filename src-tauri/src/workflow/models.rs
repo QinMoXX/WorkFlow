@@ -18,6 +18,7 @@ pub struct WorkflowNodeData {
     pub status: String,
     pub content: Option<String>,
     pub image_path: Option<String>,
+    pub thumbnail_path: Option<String>,
     pub provider_id: Option<String>,
     pub model: Option<String>,
     pub prompt_override: Option<String>,
@@ -76,4 +77,11 @@ pub struct WorkflowSnapshot {
 pub struct RunResponse {
     pub snapshot: WorkflowSnapshot,
     pub logs: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportedImage {
+    pub image_path: String,
+    pub thumbnail_path: Option<String>,
 }

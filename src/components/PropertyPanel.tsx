@@ -6,10 +6,11 @@ type PropertyPanelProps = {
   node: WorkflowNode | null;
   providers: ProviderConfig[];
   onChange: (patch: Partial<WorkflowNodeData>) => void;
+  onImportImage: (file: File) => void;
   onRun: () => void;
 };
 
-export function PropertyPanel({ node, providers, onChange, onRun }: PropertyPanelProps) {
+export function PropertyPanel({ node, providers, onChange, onImportImage, onRun }: PropertyPanelProps) {
   if (!node) {
     return (
       <div className="empty-panel">
@@ -67,14 +68,34 @@ export function PropertyPanel({ node, providers, onChange, onRun }: PropertyPane
       )}
 
       {data.kind === "imageInput" && (
-        <label>
-          图片路径
-          <input
-            value={data.imagePath ?? ""}
-            onChange={(event) => onChange({ imagePath: event.target.value })}
-            placeholder="/path/to/image.png"
-          />
-        </label>
+        <>
+          <label>
+            选择图片
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) onImportImage(file);
+                event.target.value = "";
+              }}
+            />
+          </label>
+          <label>
+            图片路径
+            <input
+              value={data.imagePath ?? ""}
+              onChange={(event) =>
+                onChange({
+                  imagePath: event.target.value,
+                  thumbnailPath: undefined,
+                  resultPath: event.target.value,
+                })
+              }
+              placeholder="/path/to/image.png"
+            />
+          </label>
+        </>
       )}
 
       {(data.kind === "textToImage" || data.kind === "imageToImage") && (

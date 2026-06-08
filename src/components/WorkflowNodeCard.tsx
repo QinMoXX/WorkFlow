@@ -1,21 +1,41 @@
+import { type MouseEvent } from "react";
 import { Handle, NodeProps, Position } from "@xyflow/react";
 import { NodeImagePreview } from "./NodeImagePreview";
 import { outputType, nodeSummary } from "../lib/workflowGraph";
 import { WorkflowNode } from "../types/workflow";
 
-export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowNode>) {
+export function WorkflowNodeCard({ id, data, selected }: NodeProps<WorkflowNode>) {
   const hasPromptInput = data.kind === "textToImage" || data.kind === "imageToImage";
   const hasImageInput = data.kind === "imageToImage" || data.kind === "output";
   const output = outputType(data.kind);
   const previewPath =
     data.kind === "imageInput"
-      ? data.resultPath || data.imagePath
+      ? data.thumbnailPath || data.resultPath || data.imagePath
       : data.kind === "textToImage" || data.kind === "imageToImage"
         ? data.resultPath
         : undefined;
+  const contextImagePath =
+    data.kind === "output" ? data.lastOutputPath : data.resultPath || data.imagePath;
+
+  const handleContextMenu = (event: MouseEvent) => {
+    if (!contextImagePath) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    window.dispatchEvent(
+      new CustomEvent("workflow:image-context-menu", {
+        detail: {
+          nodeId: id,
+          imagePath: contextImagePath,
+          x: event.clientX,
+          y: event.clientY,
+        },
+      }),
+    );
+  };
 
   return (
-    <section className={`workflow-node ${selected ? "is-selected" : ""}`}>
+    <section className={`workflow-node ${selected ? "is-selected" : ""}`} onContextMenu={handleContextMenu}>
       {hasPromptInput && (
         <Handle
           id="prompt-in"

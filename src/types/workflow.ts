@@ -17,6 +17,7 @@ export type WorkflowNodeData = {
   status: NodeRunStatus;
   content?: string;
   imagePath?: string;
+  thumbnailPath?: string;
   providerId?: string;
   model?: string;
   promptOverride?: string;
@@ -55,4 +56,9 @@ export type WorkflowSnapshot = {
 export type RunResponse = {
   snapshot: WorkflowSnapshot;
   logs: string[];
+};
+
+export type ImportedImage = {
+  imagePath: string;
+  thumbnailPath?: string | null;
 };

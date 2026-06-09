@@ -1,14 +1,15 @@
 mod workflow;
 
 use workflow::commands::{
-    copy_image_to_clipboard, import_clipboard_image, import_image_data_url, load_provider_configs,
-    load_workflow, run_node, run_workflow, save_image_as, save_provider_configs, save_workflow,
-    show_in_folder,
+    cancel_run, copy_image_to_clipboard, import_clipboard_image, import_image_data_url,
+    load_provider_configs, load_workflow, run_node, run_workflow, save_image_as,
+    save_provider_configs, save_workflow, show_in_folder, RunControlState,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(RunControlState::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
@@ -21,6 +22,7 @@ pub fn run() {
             copy_image_to_clipboard,
             save_provider_configs,
             load_provider_configs,
+            cancel_run,
             run_node,
             run_workflow
         ])

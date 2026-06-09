@@ -1,13 +1,17 @@
 use std::{
     borrow::Cow,
+    collections::HashSet,
     fs,
     path::Path,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use arboard::{Clipboard, ImageData};
-use tauri::AppHandle;
+use tauri::{AppHandle, State};
 
 use super::{
     executor::run_nodes,
@@ -24,6 +28,35 @@ use super::{
 };
 
 static RUN_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+
+#[derive(Clone, Default)]
+pub struct RunControlState {
+    cancelled_run_ids: Arc<Mutex<HashSet<String>>>,
+}
+
+impl RunControlState {
+    pub fn cancel(&self, run_id: &str) -> Result<(), String> {
+        let mut cancelled = self
+            .cancelled_run_ids
+            .lock()
+            .map_err(|_| "运行控制状态已损坏".to_string())?;
+        cancelled.insert(run_id.to_string());
+        Ok(())
+    }
+
+    pub fn is_cancelled(&self, run_id: &str) -> bool {
+        self.cancelled_run_ids
+            .lock()
+            .map(|cancelled| cancelled.contains(run_id))
+            .unwrap_or(true)
+    }
+
+    pub fn clear(&self, run_id: &str) {
+        if let Ok(mut cancelled) = self.cancelled_run_ids.lock() {
+            cancelled.remove(run_id);
+        }
+    }
+}
 
 #[tauri::command]
 pub fn save_workflow(app: AppHandle, snapshot: WorkflowSnapshot) -> Result<(), String> {
@@ -100,12 +133,22 @@ pub fn load_provider_configs(app: AppHandle) -> Result<Vec<ProviderConfig>, Stri
 }
 
 #[tauri::command]
+pub fn cancel_run(state: State<'_, RunControlState>, run_id: String) -> Result<(), String> {
+    if run_id.trim().is_empty() {
+        return Err("运行 ID 为空".to_string());
+    }
+    state.cancel(run_id.trim())
+}
+
+#[tauri::command]
 pub async fn run_node(
     app: AppHandle,
+    state: State<'_, RunControlState>,
     snapshot: WorkflowSnapshot,
     node_id: String,
 ) -> Result<RunResponse, String> {
     let run_id = create_run_id();
+    let run_control = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let mut snapshot = snapshot;
         validate_connections(&snapshot)?;
@@ -119,6 +162,7 @@ pub async fn run_node(
             "node",
             Some(node_id),
             run_id,
+            &run_control,
         )
     })
     .await
@@ -128,9 +172,11 @@ pub async fn run_node(
 #[tauri::command]
 pub async fn run_workflow(
     app: AppHandle,
+    state: State<'_, RunControlState>,
     snapshot: WorkflowSnapshot,
 ) -> Result<RunResponse, String> {
     let run_id = create_run_id();
+    let run_control = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let mut snapshot = snapshot;
         validate_connections(&snapshot)?;
@@ -144,6 +190,7 @@ pub async fn run_workflow(
             "workflow",
             None,
             run_id,
+            &run_control,
         )
     })
     .await

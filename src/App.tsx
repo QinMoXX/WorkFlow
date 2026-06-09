@@ -32,6 +32,7 @@ import {
   ImportedImage,
   RunFinishedEvent,
   RunLogEvent,
+  RunMode,
   RunNodeEvent,
   RunStartedEvent,
   WorkflowEdge,
@@ -62,6 +63,15 @@ type ClipboardGraph = {
   edges: WorkflowEdge[];
 };
 
+type ActiveRunState = {
+  runId: string | null;
+  mode: RunMode;
+  nodeIds: string[];
+  isCancelling: boolean;
+};
+
+const ACTIVE_NODE_STATUSES = new Set(["queued", "running"]);
+
 function App() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -73,6 +83,7 @@ function App() {
   const [edgeContextMenu, setEdgeContextMenu] = useState<EdgeContextMenu | null>(null);
   const [providers, setProviders] = useState<ProviderConfig[]>(defaultProviderConfigs);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<WorkflowNode, WorkflowEdge> | null>(null);
+  const [activeRun, setActiveRun] = useState<ActiveRunState | null>(null);
   const activeRunIdRef = useRef<string | null>(null);
   const runRequestTokenRef = useRef(0);
   const latestRunSequenceByRunIdRef = useRef(new Map<string, number>());
@@ -86,6 +97,14 @@ function App() {
   const selectedNode = useMemo(
     () => nodes.find((node) => node.id === selectedNodeId) ?? null,
     [nodes, selectedNodeId],
+  );
+  const isRunActive = activeRun !== null;
+  const canCancelRun = Boolean(activeRun?.runId) && !activeRun?.isCancelling;
+  const selectedNodeCanCancelRun = Boolean(
+    activeRun?.runId &&
+      selectedNode &&
+      activeRun.nodeIds.includes(selectedNode.id) &&
+      ACTIVE_NODE_STATUSES.has(selectedNode.data.status),
   );
 
   const appendLogs = useCallback((nextLogs: string[]) => {
@@ -132,6 +151,12 @@ function App() {
       listen<RunStartedEvent>("workflow://run/started", (event) => {
         activeRunIdRef.current = event.payload.runId;
         latestRunSequenceByRunIdRef.current.set(event.payload.runId, 0);
+        setActiveRun({
+          runId: event.payload.runId,
+          mode: event.payload.mode,
+          nodeIds: event.payload.nodeIds,
+          isCancelling: false,
+        });
         setNodes((current) =>
           current.map((node) =>
             event.payload.nodeIds.includes(node.id)
@@ -173,8 +198,12 @@ function App() {
       listen<RunFinishedEvent>("workflow://run/finished", (event) => {
         if (event.payload.runId !== activeRunIdRef.current) return;
         const { summary } = event.payload;
+        activeRunIdRef.current = null;
+        setActiveRun(null);
         appendLogs([
-          `运行结束：成功 ${summary.success}，失败 ${summary.error}，阻塞 ${summary.blocked}，跳过 ${summary.skipped}`,
+          event.payload.status === "cancelled"
+            ? `运行已打断：成功 ${summary.success}，失败 ${summary.error}，阻塞 ${summary.blocked}，跳过 ${summary.skipped}`
+            : `运行结束：成功 ${summary.success}，失败 ${summary.error}，阻塞 ${summary.blocked}，跳过 ${summary.skipped}`,
         ]);
       }),
     ];
@@ -417,10 +446,40 @@ function App() {
     }
   };
 
+  const cancelActiveRun = async () => {
+    if (!activeRun?.runId) {
+      appendLogs(["运行已开始，等待后端返回运行 ID 后才能打断"]);
+      return;
+    }
+
+    const runId = activeRun.runId;
+    setActiveRun((current) => (current?.runId === runId ? { ...current, isCancelling: true } : current));
+    setNodes((current) =>
+      current.map((node) =>
+        activeRun.nodeIds.includes(node.id) && ACTIVE_NODE_STATUSES.has(node.data.status)
+          ? { ...node, data: { ...node.data, status: "cancelled", error: "已请求打断运行" } }
+          : node,
+      ),
+    );
+
+    try {
+      await invoke("cancel_run", { runId });
+      appendLogs([`已请求打断运行：${runId}`]);
+    } catch (error) {
+      setActiveRun((current) => (current?.runId === runId ? { ...current, isCancelling: false } : current));
+      appendLogs([`打断运行失败：${String(error)}`]);
+    }
+  };
+
   const runNode = async (nodeId: string) => {
+    if (activeRun) {
+      appendLogs(["已有节点正在运行，请等待结束或先打断当前运行"]);
+      return;
+    }
     const requestToken = runRequestTokenRef.current + 1;
     runRequestTokenRef.current = requestToken;
     activeRunIdRef.current = null;
+    setActiveRun({ runId: null, mode: "node", nodeIds: [nodeId], isCancelling: false });
     setNodes((current) =>
       current.map((node) =>
         node.id === nodeId ? { ...node, data: { ...node.data, status: "running" } } : node,
@@ -437,6 +496,9 @@ function App() {
       applySnapshot(response.snapshot);
       appendLogs(response.logs);
     } catch (error) {
+      if (requestToken !== runRequestTokenRef.current) return;
+      activeRunIdRef.current = null;
+      setActiveRun(null);
       setNodes((current) =>
         current.map((node) =>
           node.id === nodeId ? { ...node, data: { ...node.data, status: "error", error: String(error) } } : node,
@@ -447,9 +509,17 @@ function App() {
   };
 
   const runWorkflow = async () => {
+    if (activeRun) {
+      const shouldCancel = window.confirm("当前已有节点正在运行。要先打断当前运行吗？");
+      if (shouldCancel) {
+        void cancelActiveRun();
+      }
+      return;
+    }
     const requestToken = runRequestTokenRef.current + 1;
     runRequestTokenRef.current = requestToken;
     activeRunIdRef.current = null;
+    setActiveRun({ runId: null, mode: "workflow", nodeIds: nodes.map((node) => node.id), isCancelling: false });
     setNodes((current) =>
       current.map((node) => ({ ...node, data: { ...node.data, status: "queued" } })),
     );
@@ -463,6 +533,9 @@ function App() {
       applySnapshot(response.snapshot);
       appendLogs(response.logs);
     } catch (error) {
+      if (requestToken !== runRequestTokenRef.current) return;
+      activeRunIdRef.current = null;
+      setActiveRun(null);
       appendLogs([`工作流运行失败：${String(error)}`]);
     }
   };
@@ -572,6 +645,10 @@ function App() {
 
   const rerunContextNode = () => {
     if (!nodeContextMenu) return;
+    if (activeRun) {
+      appendLogs(["已有节点正在运行，不能重新运行其他节点"]);
+      return;
+    }
     const nodeId = nodeContextMenu.nodeId;
     setNodeContextMenu(null);
     runNode(nodeId);
@@ -889,8 +966,12 @@ function App() {
         <NodeLibrary
           onAddNode={handleAddNode}
           onRunWorkflow={runWorkflow}
+          onCancelRun={cancelActiveRun}
           onSaveWorkflow={saveWorkflow}
           onOpenSettings={() => setIsSettingsOpen(true)}
+          isRunActive={isRunActive}
+          canCancelRun={canCancelRun}
+          isCancellingRun={activeRun?.isCancelling ?? false}
         />
 
         <section className="canvas-panel">
@@ -943,6 +1024,10 @@ function App() {
             onChange={updateSelectedNode}
             onImportImage={importImageToSelectedNode}
             onRun={() => selectedNode && runNode(selectedNode.id)}
+            onCancelRun={cancelActiveRun}
+            canRun={!isRunActive}
+            canCancelRun={selectedNodeCanCancelRun}
+            isCancellingRun={activeRun?.isCancelling ?? false}
           />
         </aside>
 
@@ -961,7 +1046,7 @@ function App() {
             <button type="button" onClick={showContextImageInFolder} disabled={!nodeContextMenu.imagePath}>
               在文件夹中显示
             </button>
-            <button type="button" onClick={rerunContextNode}>
+            <button type="button" onClick={rerunContextNode} disabled={isRunActive}>
               重新运行该节点
             </button>
             <button type="button" className="danger-menu-item" onClick={deleteContextNode}>

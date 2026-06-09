@@ -4,11 +4,24 @@ import { WorkflowNodeKind } from "../types/workflow";
 type NodeLibraryProps = {
   onAddNode: (kind: WorkflowNodeKind) => void;
   onRunWorkflow: () => void;
+  onCancelRun: () => void;
   onSaveWorkflow: () => void;
   onOpenSettings: () => void;
+  isRunActive: boolean;
+  canCancelRun: boolean;
+  isCancellingRun: boolean;
 };
 
-export function NodeLibrary({ onAddNode, onRunWorkflow, onSaveWorkflow, onOpenSettings }: NodeLibraryProps) {
+export function NodeLibrary({
+  onAddNode,
+  onRunWorkflow,
+  onCancelRun,
+  onSaveWorkflow,
+  onOpenSettings,
+  isRunActive,
+  canCancelRun,
+  isCancellingRun,
+}: NodeLibraryProps) {
   return (
     <aside className="node-library">
       <div className="brand">
@@ -29,8 +42,13 @@ export function NodeLibrary({ onAddNode, onRunWorkflow, onSaveWorkflow, onOpenSe
         ))}
       </div>
       <button className="primary-action" type="button" onClick={onRunWorkflow}>
-        运行全部
+        {isRunActive ? "运行全部..." : "运行全部"}
       </button>
+      {isRunActive && (
+        <button className="danger-action" type="button" onClick={onCancelRun} disabled={!canCancelRun || isCancellingRun}>
+          {isCancellingRun ? "正在打断" : "打断运行"}
+        </button>
+      )}
       <button className="secondary-action" type="button" onClick={onSaveWorkflow}>
         保存工作流
       </button>

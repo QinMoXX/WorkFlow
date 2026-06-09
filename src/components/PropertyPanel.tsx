@@ -8,9 +8,23 @@ type PropertyPanelProps = {
   onChange: (patch: Partial<WorkflowNodeData>) => void;
   onImportImage: (file: File) => void;
   onRun: () => void;
+  onCancelRun: () => void;
+  canRun: boolean;
+  canCancelRun: boolean;
+  isCancellingRun: boolean;
 };
 
-export function PropertyPanel({ node, providers, onChange, onImportImage, onRun }: PropertyPanelProps) {
+export function PropertyPanel({
+  node,
+  providers,
+  onChange,
+  onImportImage,
+  onRun,
+  onCancelRun,
+  canRun,
+  canCancelRun,
+  isCancellingRun,
+}: PropertyPanelProps) {
   if (!node) {
     return (
       <div className="empty-panel">
@@ -46,8 +60,12 @@ export function PropertyPanel({ node, providers, onChange, onImportImage, onRun 
           <span className="panel-kicker">节点属性</span>
           <h2>{data.title}</h2>
         </div>
-        <button type="button" onClick={onRun} disabled={data.kind === "group"}>
-          运行
+        <button
+          type="button"
+          onClick={canCancelRun ? onCancelRun : onRun}
+          disabled={data.kind === "group" || (!canRun && !canCancelRun) || isCancellingRun}
+        >
+          {canCancelRun ? (isCancellingRun ? "正在打断" : "打断") : canRun ? "运行" : "运行中"}
         </button>
       </header>
 

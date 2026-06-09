@@ -59,6 +59,11 @@ export function WorkflowNodeCard({ id, data, selected }: NodeProps<WorkflowNode>
       <header className="node-header">
         <span className={`status-dot status-${data.status}`} />
         <strong>{data.title}</strong>
+        {(data.status === "queued" || data.status === "running" || data.status === "cancelled") && (
+          <span className={`node-run-state node-run-state-${data.status}`}>
+            {runStateLabel(data.status)}
+          </span>
+        )}
       </header>
       <p>{nodeSummary(data)}</p>
       <NodeImagePreview path={previewPath} label={`${data.title} 预览`} />
@@ -83,4 +88,11 @@ export function WorkflowNodeCard({ id, data, selected }: NodeProps<WorkflowNode>
       )}
     </section>
   );
+}
+
+function runStateLabel(status: WorkflowNode["data"]["status"]) {
+  if (status === "queued") return "等待";
+  if (status === "running") return "运行中";
+  if (status === "cancelled") return "已打断";
+  return status;
 }

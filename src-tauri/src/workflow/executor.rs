@@ -9,6 +9,7 @@ use std::{
 use tauri::{AppHandle, Emitter};
 
 use super::{
+    commands::RunControlState,
     image_provider::{
         ImageProvider, ImageToImageInput, OpenAiCompatibleImageProvider, TextToImageInput,
     },
@@ -29,6 +30,7 @@ pub fn run_nodes(
     mode: &str,
     target_node_id: Option<String>,
     run_id: String,
+    run_control: &RunControlState,
 ) -> Result<RunResponse, String> {
     let mut logs = Vec::new();
     let mut sequence = 0;
@@ -60,6 +62,43 @@ pub fn run_nodes(
             .iter()
             .position(|node| node.id == *node_id)
             .ok_or_else(|| format!("节点 {} 不存在", node_id))?;
+
+        if run_control.is_cancelled(&run_id) {
+            let message = "运行已打断，节点未执行".to_string();
+            snapshot.nodes[index].data.status = "cancelled".to_string();
+            snapshot.nodes[index].data.error = Some(message.clone());
+            logs.push(format!(
+                "{} 已打断：{}",
+                snapshot.nodes[index].data.title, message
+            ));
+            emit_log(
+                app,
+                &run_id,
+                &mut sequence,
+                "warn",
+                &logs[logs.len() - 1],
+                Some(node_id),
+            );
+            sequence += 1;
+            emit_node(
+                app,
+                &run_id,
+                &mut sequence,
+                snapshot,
+                index,
+                None,
+                Some(run_error(
+                    "cancellation",
+                    "runCancelled",
+                    message,
+                    Some(node_id.clone()),
+                    None,
+                    false,
+                )),
+                None,
+            );
+            continue;
+        }
 
         if let Some(cause_node_id) = upstream_failure(snapshot, node_id, &failed_nodes) {
             let message = "上游节点失败，当前节点未执行".to_string();
@@ -116,6 +155,50 @@ pub fn run_nodes(
 
         match execute_node(snapshot, index, &generated_dir, providers) {
             Ok(log) => {
+                if run_control.is_cancelled(&run_id) {
+                    let message = "运行已打断，当前节点结果已忽略".to_string();
+                    snapshot.nodes[index].data.status = "cancelled".to_string();
+                    snapshot.nodes[index].data.error = Some(message.clone());
+                    logs.push(format!(
+                        "{} 已打断：{}",
+                        snapshot.nodes[index].data.title, message
+                    ));
+                    emit_log(
+                        app,
+                        &run_id,
+                        &mut sequence,
+                        "warn",
+                        &logs[logs.len() - 1],
+                        Some(node_id),
+                    );
+                    sequence += 1;
+                    emit_node(
+                        app,
+                        &run_id,
+                        &mut sequence,
+                        snapshot,
+                        index,
+                        None,
+                        Some(run_error(
+                            "cancellation",
+                            "runCancelled",
+                            message,
+                            Some(node_id.clone()),
+                            None,
+                            false,
+                        )),
+                        Some(node_metrics(
+                            snapshot,
+                            index,
+                            providers,
+                            None,
+                            Some(node_started_at),
+                            Some(timestamp()),
+                            Some(node_timer.elapsed().as_millis()),
+                        )),
+                    );
+                    continue;
+                }
                 snapshot.nodes[index].data.status = "success".to_string();
                 let finished_at = timestamp();
                 let duration_ms = node_timer.elapsed().as_millis();
@@ -149,6 +232,50 @@ pub fn run_nodes(
                 );
             }
             Err(error) => {
+                if run_control.is_cancelled(&run_id) {
+                    let message = "运行已打断，当前节点错误已忽略".to_string();
+                    snapshot.nodes[index].data.status = "cancelled".to_string();
+                    snapshot.nodes[index].data.error = Some(message.clone());
+                    logs.push(format!(
+                        "{} 已打断：{}",
+                        snapshot.nodes[index].data.title, message
+                    ));
+                    emit_log(
+                        app,
+                        &run_id,
+                        &mut sequence,
+                        "warn",
+                        &logs[logs.len() - 1],
+                        Some(node_id),
+                    );
+                    sequence += 1;
+                    emit_node(
+                        app,
+                        &run_id,
+                        &mut sequence,
+                        snapshot,
+                        index,
+                        None,
+                        Some(run_error(
+                            "cancellation",
+                            "runCancelled",
+                            message,
+                            Some(node_id.clone()),
+                            None,
+                            false,
+                        )),
+                        Some(node_metrics(
+                            snapshot,
+                            index,
+                            providers,
+                            None,
+                            Some(node_started_at),
+                            Some(timestamp()),
+                            Some(node_timer.elapsed().as_millis()),
+                        )),
+                    );
+                    continue;
+                }
                 snapshot.nodes[index].data.status = "error".to_string();
                 snapshot.nodes[index].data.error = Some(error.clone());
                 failed_nodes.insert(node_id.clone());
@@ -196,11 +323,14 @@ pub fn run_nodes(
     }
 
     let summary = run_summary(snapshot, &execution_order);
+    let was_cancelled = run_control.is_cancelled(&run_id);
     emit_finished(
         app,
         RunFinishedEvent {
             run_id: run_id.clone(),
-            status: if summary.error > 0 {
+            status: if was_cancelled {
+                "cancelled"
+            } else if summary.error > 0 {
                 "error"
             } else {
                 "success"
@@ -214,6 +344,7 @@ pub fn run_nodes(
         },
     );
 
+    run_control.clear(&run_id);
     Ok(RunResponse {
         snapshot: snapshot.clone(),
         logs,

@@ -10,7 +10,7 @@ export type WorkflowNodeKind =
   | "output"
   | "group";
 
-export type NodeRunStatus = "idle" | "queued" | "running" | "success" | "error" | "blocked";
+export type NodeRunStatus = "idle" | "queued" | "running" | "success" | "error" | "blocked" | "cancelled";
 
 export type WorkflowNodeData = {
   kind: WorkflowNodeKind;

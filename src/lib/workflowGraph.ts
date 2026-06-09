@@ -117,6 +117,18 @@ export function nodeSummary(data: WorkflowNodeData) {
 }
 
 export function toSnapshot(nodes: WorkflowNode[], edges: WorkflowEdge[]): WorkflowSnapshot {
+  return buildSnapshot(nodes, edges, true);
+}
+
+export function toPersistableSnapshot(nodes: WorkflowNode[], edges: WorkflowEdge[]): WorkflowSnapshot {
+  return buildSnapshot(nodes, edges, false);
+}
+
+function buildSnapshot(
+  nodes: WorkflowNode[],
+  edges: WorkflowEdge[],
+  includeRuntimeState: boolean,
+): WorkflowSnapshot {
   return {
     nodes: nodes.map((node) => ({
       id: node.id,
@@ -124,7 +136,7 @@ export function toSnapshot(nodes: WorkflowNode[], edges: WorkflowEdge[]): Workfl
       position: node.position,
       parentId: node.parentId,
       extent: node.extent === "parent" ? "parent" : null,
-      data: node.data,
+      data: includeRuntimeState ? node.data : cleanPersistableNodeData(node.data),
     })),
     edges: edges.map((edge) => ({
       id: edge.id,
@@ -134,6 +146,14 @@ export function toSnapshot(nodes: WorkflowNode[], edges: WorkflowEdge[]): Workfl
       targetHandle: edge.targetHandle,
       dataType: edge.data?.dataType ?? "image",
     })),
+  };
+}
+
+function cleanPersistableNodeData(data: WorkflowNodeData): WorkflowNodeData {
+  const { error: _error, ...persistableData } = data;
+  return {
+    ...persistableData,
+    status: "idle",
   };
 }
 

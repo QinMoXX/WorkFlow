@@ -34,11 +34,19 @@ pub fn save_provider_configs(app: &AppHandle, providers: &[ProviderConfig]) -> R
     validate_provider_configs(providers)?;
     let path = provider_config_path(app)?;
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "创建供应商配置目录失败：{}；原因：{}",
+                parent.display(),
+                error
+            )
+        })?;
     }
 
-    let json = serde_json::to_string_pretty(providers).map_err(|error| error.to_string())?;
-    fs::write(path, json).map_err(|error| error.to_string())
+    let json = serde_json::to_string_pretty(providers)
+        .map_err(|error| format!("序列化供应商配置失败：{}", error))?;
+    fs::write(&path, json)
+        .map_err(|error| format!("写入供应商配置失败：{}；原因：{}", path.display(), error))
 }
 
 pub fn load_provider_configs(app: &AppHandle) -> Result<Vec<ProviderConfig>, String> {
@@ -47,8 +55,15 @@ pub fn load_provider_configs(app: &AppHandle) -> Result<Vec<ProviderConfig>, Str
         return Ok(default_provider_configs());
     }
 
-    let json = fs::read_to_string(path).map_err(|error| error.to_string())?;
-    serde_json::from_str(&json).map_err(|error| error.to_string())
+    let json = fs::read_to_string(&path)
+        .map_err(|error| format!("读取供应商配置失败：{}；原因：{}", path.display(), error))?;
+    serde_json::from_str(&json).map_err(|error| {
+        format!(
+            "解析供应商配置 JSON 失败：{}；原因：{}",
+            path.display(),
+            error
+        )
+    })
 }
 
 fn default_provider_configs() -> Vec<ProviderConfig> {
@@ -163,5 +178,5 @@ fn provider_config_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     app.path()
         .app_data_dir()
         .map(|path| path.join("providers").join("config.json"))
-        .map_err(|error| error.to_string())
+        .map_err(|error| format!("获取应用数据目录失败：{}", error))
 }

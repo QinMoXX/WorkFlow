@@ -2,6 +2,7 @@ use std::{
     borrow::Cow,
     fs,
     path::Path,
+    sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -21,6 +22,8 @@ use super::{
         show_path_in_folder,
     },
 };
+
+static RUN_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[tauri::command]
 pub fn save_workflow(app: AppHandle, snapshot: WorkflowSnapshot) -> Result<(), String> {
@@ -67,7 +70,8 @@ pub fn copy_image_to_clipboard(image_path: String) -> Result<(), String> {
         return Err(format!("图片不存在：{}", image_path));
     }
 
-    let bytes = fs::read(path).map_err(|error| format!("读取图片失败：{}", error))?;
+    let bytes = fs::read(path)
+        .map_err(|error| format!("读取图片失败：{}；原因：{}", path.display(), error))?;
     let image = image::load_from_memory(&bytes)
         .map_err(|error| format!("解析图片失败：{}；原因：{}", image_path, error))?
         .to_rgba8();
@@ -122,7 +126,10 @@ pub async fn run_node(
 }
 
 #[tauri::command]
-pub async fn run_workflow(app: AppHandle, snapshot: WorkflowSnapshot) -> Result<RunResponse, String> {
+pub async fn run_workflow(
+    app: AppHandle,
+    snapshot: WorkflowSnapshot,
+) -> Result<RunResponse, String> {
     let run_id = create_run_id();
     tauri::async_runtime::spawn_blocking(move || {
         let mut snapshot = snapshot;
@@ -148,5 +155,6 @@ fn create_run_id() -> String {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())
         .unwrap_or_default();
-    format!("run-{}-{}", millis, std::process::id())
+    let sequence = RUN_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    format!("run-{}-{}-{}", millis, std::process::id(), sequence)
 }

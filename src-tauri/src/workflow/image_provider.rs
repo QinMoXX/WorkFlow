@@ -105,10 +105,13 @@ impl<'a> OpenAiCompatibleImageProvider<'a> {
         node_id: &str,
         request: ImageGenerationRequest,
     ) -> Result<ImageResult, String> {
-        let endpoint = format!(
-            "{}/images/generations",
-            self.provider.base_url.trim().trim_end_matches('/')
-        );
+        let base_url = self.provider.base_url.trim();
+        if base_url.is_empty() {
+            return Err(format!("供应商 {} 缺少 API URL", self.provider.name));
+        }
+        let endpoint = format!("{}/images/generations", base_url.trim_end_matches('/'));
+        Url::parse(&endpoint)
+            .map_err(|error| format!("图片 API 地址无效：{}；原因：{}", endpoint, error))?;
 
         let response = self
             .send_image_request(&endpoint, &request)
@@ -139,8 +142,14 @@ impl<'a> OpenAiCompatibleImageProvider<'a> {
 
         let status = response.status();
         if !status.is_success() {
-            let body = response.text().unwrap_or_else(|_| String::new());
-            return Err(format!("图片 API 返回错误 {}：{}", status, body));
+            let body = response
+                .text()
+                .unwrap_or_else(|error| format!("读取错误响应内容失败：{}", error_chain(&error)));
+            return Err(format!(
+                "图片 API 返回错误 {}：{}",
+                status,
+                truncate_value(&body, 600)
+            ));
         }
 
         let body: ImageGenerationResponse = response
@@ -168,16 +177,30 @@ impl<'a> OpenAiCompatibleImageProvider<'a> {
     }
 
     fn download_image(&self, node_id: &str, remote_url: &str) -> Result<String, String> {
-        fs::create_dir_all(self.generated_dir).map_err(|error| error.to_string())?;
+        Url::parse(remote_url).map_err(|error| {
+            format!(
+                "图片 API 返回的图片 URL 无效：{}；原因：{}",
+                remote_url, error
+            )
+        })?;
+        fs::create_dir_all(self.generated_dir).map_err(|error| {
+            format!(
+                "创建生成图片目录失败：{}；原因：{}",
+                self.generated_dir.display(),
+                error
+            )
+        })?;
 
-        let response = self
-            .client
-            .get(remote_url)
-            .send()
-            .map_err(|error| format!("下载生成图片失败：{}", error_chain(&error)))?;
+        let response = self.client.get(remote_url).send().map_err(|error| {
+            format!(
+                "下载生成图片失败：{}；原因：{}",
+                remote_url,
+                error_chain(&error)
+            )
+        })?;
         let status = response.status();
         if !status.is_success() {
-            return Err(format!("下载生成图片返回错误：{}", status));
+            return Err(format!("下载生成图片返回错误 {}：{}", status, remote_url));
         }
 
         let extension = image_extension(response.headers().get(reqwest::header::CONTENT_TYPE));
@@ -187,18 +210,27 @@ impl<'a> OpenAiCompatibleImageProvider<'a> {
         let path = self
             .generated_dir
             .join(result_file_name(node_id, extension)?);
-        fs::write(&path, bytes).map_err(|error| error.to_string())?;
+        fs::write(&path, bytes)
+            .map_err(|error| format!("保存生成图片失败：{}；原因：{}", path.display(), error))?;
 
         Ok(path.to_string_lossy().into_owned())
     }
 
     fn save_base64_image(&self, node_id: &str, b64_json: &str) -> Result<String, String> {
-        fs::create_dir_all(self.generated_dir).map_err(|error| error.to_string())?;
+        fs::create_dir_all(self.generated_dir).map_err(|error| {
+            format!(
+                "创建生成图片目录失败：{}；原因：{}",
+                self.generated_dir.display(),
+                error
+            )
+        })?;
         let bytes = BASE64_STANDARD
             .decode(b64_json)
             .map_err(|error| format!("解析 base64 图片失败：{}", error))?;
         let path = self.generated_dir.join(result_file_name(node_id, "png")?);
-        fs::write(&path, bytes).map_err(|error| error.to_string())?;
+        fs::write(&path, bytes).map_err(|error| {
+            format!("保存 base64 图片失败：{}；原因：{}", path.display(), error)
+        })?;
 
         Ok(path.to_string_lossy().into_owned())
     }
@@ -274,7 +306,7 @@ fn result_file_name(node_id: &str, extension: &str) -> Result<PathBuf, String> {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|error| error.to_string())?
-        .as_secs();
+        .as_nanos();
     Ok(PathBuf::from(format!(
         "{}_{}.{}",
         sanitize_node_id(node_id),
@@ -338,7 +370,8 @@ fn build_public_dns_fallback_client(
     provider: &ProviderConfig,
     endpoint: &str,
 ) -> Result<Client, String> {
-    let url = Url::parse(endpoint).map_err(|error| error.to_string())?;
+    let url = Url::parse(endpoint)
+        .map_err(|error| format!("图片 API 地址无效：{}；原因：{}", endpoint, error))?;
     let host = url
         .host_str()
         .ok_or_else(|| "API 地址缺少 host".to_string())?;
@@ -351,6 +384,16 @@ fn build_public_dns_fallback_client(
         provider,
         Some((host, SocketAddr::new(IpAddr::V4(ip), port))),
     )
+}
+
+fn truncate_value(value: &str, max_chars: usize) -> String {
+    let mut chars = value.chars();
+    let truncated: String = chars.by_ref().take(max_chars).collect();
+    if chars.next().is_some() {
+        format!("{}...", truncated)
+    } else {
+        truncated
+    }
 }
 
 fn resolve_public_ipv4(host: &str) -> Result<std::net::Ipv4Addr, String> {

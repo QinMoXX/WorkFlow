@@ -25,7 +25,7 @@ import { RunLogPanel } from "./components/RunLogPanel";
 import { WorkflowNodeCard } from "./components/WorkflowNodeCard";
 import { createNode, initialEdges, initialNodes } from "./lib/nodeCatalog";
 import { defaultProviderConfigs, firstProviderPreset } from "./lib/providerPresets";
-import { findConnectionRule, fromSnapshot, toSnapshot } from "./lib/workflowGraph";
+import { findConnectionRule, fromSnapshot, toPersistableSnapshot, toSnapshot } from "./lib/workflowGraph";
 import { ProviderConfig } from "./types/provider";
 import {
   RunResponse,
@@ -74,7 +74,8 @@ function App() {
   const [providers, setProviders] = useState<ProviderConfig[]>(defaultProviderConfigs);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<WorkflowNode, WorkflowEdge> | null>(null);
   const activeRunIdRef = useRef<string | null>(null);
-  const latestRunSequenceRef = useRef(0);
+  const runRequestTokenRef = useRef(0);
+  const latestRunSequenceByRunIdRef = useRef(new Map<string, number>());
   const historyPastRef = useRef<WorkflowSnapshot[]>([]);
   const historyFutureRef = useRef<WorkflowSnapshot[]>([]);
   const isRestoringHistoryRef = useRef(false);
@@ -130,7 +131,7 @@ function App() {
     const unlisteners = [
       listen<RunStartedEvent>("workflow://run/started", (event) => {
         activeRunIdRef.current = event.payload.runId;
-        latestRunSequenceRef.current = 0;
+        latestRunSequenceByRunIdRef.current.set(event.payload.runId, 0);
         setNodes((current) =>
           current.map((node) =>
             event.payload.nodeIds.includes(node.id)
@@ -144,8 +145,9 @@ function App() {
       }),
       listen<RunNodeEvent>("workflow://run/node", (event) => {
         if (event.payload.runId !== activeRunIdRef.current) return;
-        if (event.payload.sequence <= latestRunSequenceRef.current) return;
-        latestRunSequenceRef.current = event.payload.sequence;
+        const latestSequence = latestRunSequenceByRunIdRef.current.get(event.payload.runId) ?? 0;
+        if (event.payload.sequence <= latestSequence) return;
+        latestRunSequenceByRunIdRef.current.set(event.payload.runId, event.payload.sequence);
         setNodes((current) =>
           current.map((node) =>
             node.id === event.payload.nodeId
@@ -397,7 +399,7 @@ function App() {
 
   const saveWorkflow = async () => {
     try {
-      await invoke("save_workflow", { snapshot: toSnapshot(nodes, edges) });
+      await invoke("save_workflow", { snapshot: toPersistableSnapshot(nodes, edges) });
       appendLogs(["已保存当前工作流"]);
     } catch (error) {
       appendLogs([`保存失败：${String(error)}`]);
@@ -416,6 +418,9 @@ function App() {
   };
 
   const runNode = async (nodeId: string) => {
+    const requestToken = runRequestTokenRef.current + 1;
+    runRequestTokenRef.current = requestToken;
+    activeRunIdRef.current = null;
     setNodes((current) =>
       current.map((node) =>
         node.id === nodeId ? { ...node, data: { ...node.data, status: "running" } } : node,
@@ -426,16 +431,25 @@ function App() {
         snapshot: toSnapshot(nodes, edges),
         nodeId,
       });
+      if (requestToken !== runRequestTokenRef.current) return;
+      if (activeRunIdRef.current && response.runId !== activeRunIdRef.current) return;
       activeRunIdRef.current = response.runId;
       applySnapshot(response.snapshot);
       appendLogs(response.logs);
     } catch (error) {
-      updateSelectedNode({ status: "error", error: String(error) });
+      setNodes((current) =>
+        current.map((node) =>
+          node.id === nodeId ? { ...node, data: { ...node.data, status: "error", error: String(error) } } : node,
+        ),
+      );
       appendLogs([`运行失败：${String(error)}`]);
     }
   };
 
   const runWorkflow = async () => {
+    const requestToken = runRequestTokenRef.current + 1;
+    runRequestTokenRef.current = requestToken;
+    activeRunIdRef.current = null;
     setNodes((current) =>
       current.map((node) => ({ ...node, data: { ...node.data, status: "queued" } })),
     );
@@ -443,6 +457,8 @@ function App() {
       const response = await invoke<RunResponse>("run_workflow", {
         snapshot: toSnapshot(nodes, edges),
       });
+      if (requestToken !== runRequestTokenRef.current) return;
+      if (activeRunIdRef.current && response.runId !== activeRunIdRef.current) return;
       activeRunIdRef.current = response.runId;
       applySnapshot(response.snapshot);
       appendLogs(response.logs);

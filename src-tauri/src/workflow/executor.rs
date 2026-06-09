@@ -1,4 +1,5 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
+use reqwest::Url;
 use std::{
     collections::HashSet,
     fs,
@@ -35,7 +36,13 @@ pub fn run_nodes(
     let started_at = timestamp();
     let run_timer = Instant::now();
     let generated_dir = generated_assets_dir(app)?;
-    fs::create_dir_all(&generated_dir).map_err(|error| error.to_string())?;
+    fs::create_dir_all(&generated_dir).map_err(|error| {
+        format!(
+            "创建生成图片目录失败：{}；原因：{}",
+            generated_dir.display(),
+            error
+        )
+    })?;
     emit_started(
         app,
         RunStartedEvent {
@@ -58,7 +65,10 @@ pub fn run_nodes(
             let message = "上游节点失败，当前节点未执行".to_string();
             snapshot.nodes[index].data.status = "blocked".to_string();
             snapshot.nodes[index].data.error = Some(message.clone());
-            logs.push(format!("{} 阻塞：{}", snapshot.nodes[index].data.title, message));
+            logs.push(format!(
+                "{} 阻塞：{}",
+                snapshot.nodes[index].data.title, message
+            ));
             sequence += 1;
             emit_node(
                 app,
@@ -110,7 +120,14 @@ pub fn run_nodes(
                 let finished_at = timestamp();
                 let duration_ms = node_timer.elapsed().as_millis();
                 logs.push(format!("{}，耗时 {} ms", log, duration_ms));
-                emit_log(app, &run_id, &mut sequence, "info", &logs[logs.len() - 1], Some(node_id));
+                emit_log(
+                    app,
+                    &run_id,
+                    &mut sequence,
+                    "info",
+                    &logs[logs.len() - 1],
+                    Some(node_id),
+                );
                 sequence += 1;
                 emit_node(
                     app,
@@ -139,7 +156,14 @@ pub fn run_nodes(
                     "{} 失败：{}",
                     snapshot.nodes[index].data.title, error
                 ));
-                emit_log(app, &run_id, &mut sequence, "error", &logs[logs.len() - 1], Some(node_id));
+                emit_log(
+                    app,
+                    &run_id,
+                    &mut sequence,
+                    "error",
+                    &logs[logs.len() - 1],
+                    Some(node_id),
+                );
                 sequence += 1;
                 let error_kind = classify_error(&error).to_string();
                 emit_node(
@@ -176,7 +200,12 @@ pub fn run_nodes(
         app,
         RunFinishedEvent {
             run_id: run_id.clone(),
-            status: if summary.error > 0 { "error" } else { "success" }.to_string(),
+            status: if summary.error > 0 {
+                "error"
+            } else {
+                "success"
+            }
+            .to_string(),
             started_at,
             finished_at: timestamp(),
             duration_ms: run_timer.elapsed().as_millis(),
@@ -213,6 +242,8 @@ fn execute_node(
             if image_path.trim().is_empty() {
                 return Err("图片路径为空".to_string());
             }
+            let image_path = image_path.trim().to_string();
+            validate_image_input_source(&image_path)?;
             snapshot.nodes[node_index].data.result_path = Some(image_path);
             Ok(format!("{} 输出图片路径", node.data.title))
         }
@@ -310,6 +341,9 @@ fn copy_output_image(
     if !source.exists() {
         return Err(format!("输出图片不存在：{}", image_path));
     }
+    if !source.is_file() {
+        return Err(format!("输出图片路径不是文件：{}", source.display()));
+    }
 
     let directory = Path::new(save_directory);
     fs::create_dir_all(directory)
@@ -365,7 +399,13 @@ fn image_to_api_source(image: &str) -> Result<String, String> {
     if !path.exists() {
         return Err(format!("图生图输入图片不存在：{}", image));
     }
-    let bytes = fs::read(path).map_err(|error| format!("读取图生图输入图片失败：{}", error))?;
+    let bytes = fs::read(path).map_err(|error| {
+        format!(
+            "读取图生图输入图片失败：{}；原因：{}",
+            path.display(),
+            error
+        )
+    })?;
     let mime_type = image_mime_type(path)?;
 
     Ok(format!(
@@ -449,6 +489,49 @@ fn parse_seed(seed: Option<&str>) -> Result<Option<i64>, String> {
 
 fn is_remote_url(value: &str) -> bool {
     value.starts_with("http://") || value.starts_with("https://")
+}
+
+fn validate_image_input_source(image: &str) -> Result<(), String> {
+    if image.starts_with("data:image/") {
+        return Ok(());
+    }
+
+    if image.starts_with("http://") || image.starts_with("https://") {
+        Url::parse(image).map_err(|error| {
+            format!(
+                "图片输入 URL 无效：{}；原因：{}",
+                truncate_value(image, 180),
+                error
+            )
+        })?;
+        return Ok(());
+    }
+
+    let path = Path::new(image);
+    if !path.exists() {
+        return Err(format!("图片输入文件不存在：{}", path.display()));
+    }
+    if !path.is_file() {
+        return Err(format!("图片输入路径不是文件：{}", path.display()));
+    }
+    fs::metadata(path).map_err(|error| {
+        format!(
+            "读取图片输入文件信息失败：{}；原因：{}",
+            path.display(),
+            error
+        )
+    })?;
+    Ok(())
+}
+
+fn truncate_value(value: &str, max_chars: usize) -> String {
+    let mut chars = value.chars();
+    let truncated: String = chars.by_ref().take(max_chars).collect();
+    if chars.next().is_some() {
+        format!("{}...", truncated)
+    } else {
+        truncated
+    }
 }
 
 fn timestamp() -> String {
@@ -547,9 +630,9 @@ fn node_output(snapshot: &WorkflowSnapshot, node_index: usize) -> Option<RunNode
     let node = &snapshot.nodes[node_index];
     let data_type = match node.kind {
         WorkflowNodeKind::TextInput => Some(WorkflowDataType::Text),
-        WorkflowNodeKind::ImageInput | WorkflowNodeKind::TextToImage | WorkflowNodeKind::ImageToImage => {
-            Some(WorkflowDataType::Image)
-        }
+        WorkflowNodeKind::ImageInput
+        | WorkflowNodeKind::TextToImage
+        | WorkflowNodeKind::ImageToImage => Some(WorkflowDataType::Image),
         WorkflowNodeKind::Output => Some(WorkflowDataType::Image),
         WorkflowNodeKind::Group => None,
     };
@@ -564,7 +647,11 @@ fn node_output(snapshot: &WorkflowSnapshot, node_index: usize) -> Option<RunNode
             .or_else(|| node.data.last_output_path.clone()),
         remote_url: node.data.result_url.clone(),
         thumbnail_path: node.data.thumbnail_path.clone(),
-        text_preview: node.data.content.clone().map(|value| value.chars().take(80).collect()),
+        text_preview: node
+            .data
+            .content
+            .clone()
+            .map(|value| value.chars().take(80).collect()),
     })
 }
 
@@ -654,7 +741,11 @@ fn run_summary(snapshot: &WorkflowSnapshot, execution_order: &[String]) -> RunSu
 fn classify_error(error: &str) -> &str {
     if error.contains("供应商") || error.contains("模型") || error.contains("API Key") {
         "providerConfig"
-    } else if error.contains("文件") || error.contains("目录") || error.contains("路径") || error.contains("不存在") {
+    } else if error.contains("文件")
+        || error.contains("目录")
+        || error.contains("路径")
+        || error.contains("不存在")
+    {
         "fileSystem"
     } else if error.contains("网络") || error.contains("请求") || error.contains("HTTP") {
         "network"

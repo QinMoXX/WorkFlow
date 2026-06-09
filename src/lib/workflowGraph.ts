@@ -112,6 +112,7 @@ export function nodeSummary(data: WorkflowNodeData) {
   if (data.kind === "imageInput") return data.imagePath || "选择或粘贴图片路径";
   if (data.kind === "textToImage") return `${data.providerId || "provider"} / ${data.model || "model"}`;
   if (data.kind === "imageToImage") return `strength ${data.strength ?? 0.65}`;
+  if (data.kind === "group") return "视觉分组，不参与执行语义";
   return data.saveDirectory ? `保存到 ${data.saveDirectory}` : "等待图片输入";
 }
 
@@ -121,6 +122,8 @@ export function toSnapshot(nodes: WorkflowNode[], edges: WorkflowEdge[]): Workfl
       id: node.id,
       kind: node.data.kind,
       position: node.position,
+      parentId: node.parentId,
+      extent: node.extent === "parent" ? "parent" : null,
       data: node.data,
     })),
     edges: edges.map((edge) => ({
@@ -143,6 +146,15 @@ export function fromSnapshot(snapshot: WorkflowSnapshot): {
       id: node.id,
       type: "workflowNode",
       position: node.position,
+      parentId: node.parentId ?? undefined,
+      extent: node.extent === "parent" ? "parent" : undefined,
+      style:
+        node.data.kind === "group"
+          ? {
+              width: node.data.groupWidth ?? 520,
+              height: node.data.groupHeight ?? 320,
+            }
+          : undefined,
       data: node.data,
     })),
     edges: snapshot.edges.map((edge) => ({

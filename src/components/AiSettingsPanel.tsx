@@ -48,6 +48,7 @@ export function AiSettingsPanel({ isOpen, providers, onClose, onSave }: AiSettin
   if (!isOpen) return null;
 
   const selectedProvider = draftProviders.find((provider) => provider.id === selectedProviderId) ?? null;
+  const validationErrors = validateProviders(draftProviders);
 
   const updateProvider = (providerId: string, patch: Partial<ProviderConfig>) => {
     setDraftProviders((current) =>
@@ -254,14 +255,61 @@ export function AiSettingsPanel({ isOpen, providers, onClose, onSave }: AiSettin
         </div>
 
         <footer className="settings-footer">
+          {validationErrors.length > 0 && (
+            <div className="settings-errors">
+              {validationErrors.map((error) => (
+                <span key={error}>{error}</span>
+              ))}
+            </div>
+          )}
           <button className="secondary-action compact-action" type="button" onClick={onClose}>
             取消
           </button>
-          <button className="primary-action compact-action" type="button" onClick={() => onSave(draftProviders)}>
+          <button
+            className="primary-action compact-action"
+            type="button"
+            disabled={validationErrors.length > 0}
+            onClick={() => onSave(draftProviders)}
+          >
             保存配置
           </button>
         </footer>
       </section>
     </div>
   );
+}
+
+function validateProviders(providers: ProviderConfig[]) {
+  const errors: string[] = [];
+  const providerIds = new Set<string>();
+
+  for (const provider of providers) {
+    const providerId = provider.id.trim();
+    if (!providerId) {
+      errors.push("供应商 ID 不能为空");
+    } else if (providerIds.has(providerId)) {
+      errors.push(`供应商 ID 重复：${providerId}`);
+    }
+    providerIds.add(providerId);
+
+    if (!provider.name.trim()) {
+      errors.push(`供应商 ${providerId || "(未命名)"} 名称不能为空`);
+    }
+
+    const modelKeys = new Set<string>();
+    for (const model of provider.models) {
+      const modelId = model.id.trim();
+      if (!modelId) {
+        errors.push(`供应商 ${provider.name || providerId} 存在空模型 ID`);
+        continue;
+      }
+      const modelKey = `${modelId}:${model.capability}`;
+      if (modelKeys.has(modelKey)) {
+        errors.push(`供应商 ${provider.name || providerId} 模型重复：${modelId}`);
+      }
+      modelKeys.add(modelKey);
+    }
+  }
+
+  return Array.from(new Set(errors));
 }

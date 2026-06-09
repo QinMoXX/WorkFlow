@@ -1,4 +1,4 @@
-use std::fs;
+use std::{collections::HashSet, fs};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
@@ -129,16 +129,29 @@ pub fn resolve_ai_node_provider<'a>(
 }
 
 fn validate_provider_configs(providers: &[ProviderConfig]) -> Result<(), String> {
+    let mut provider_ids = HashSet::new();
+
     for provider in providers {
         if provider.id.trim().is_empty() {
             return Err("供应商 ID 不能为空".to_string());
         }
+        if !provider_ids.insert(provider.id.trim().to_string()) {
+            return Err(format!("供应商 ID 重复：{}", provider.id));
+        }
         if provider.name.trim().is_empty() {
             return Err(format!("供应商 {} 名称不能为空", provider.id));
         }
+        let mut model_keys = HashSet::new();
         for model in &provider.models {
             if model.id.trim().is_empty() {
                 return Err(format!("供应商 {} 存在空模型 ID", provider.name));
+            }
+            let model_key = format!("{}::{:?}", model.id.trim(), model.capability);
+            if !model_keys.insert(model_key) {
+                return Err(format!(
+                    "供应商 {} 存在重复模型 ID 和能力组合：{}",
+                    provider.name, model.id
+                ));
             }
         }
     }

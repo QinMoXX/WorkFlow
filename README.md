@@ -195,6 +195,22 @@ appData/
         thumbnails/
 ```
 
+项目元信息建议保存在 `appData/workflows/projects.json`：
+
+```json
+[
+  {
+    "id": "project-1781025600000",
+    "name": "默认项目",
+    "createdAt": "2026-06-09T00:00:00.000Z",
+    "updatedAt": "2026-06-09T00:00:00.000Z",
+    "lastOpenedAt": "2026-06-09T00:00:00.000Z"
+  }
+]
+```
+
+后续迁移到多项目时，当前 `workflows/current.json` 可以作为默认项目导入到 `workflows/{projectId}/workflow.json`，项目内图片资源放在同级 `assets/` 下，避免不同项目之间的导入图和生成图互相污染。
+
 ## 常见错误
 
 ### DNS 或网络连接失败

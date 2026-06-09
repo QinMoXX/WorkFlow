@@ -5,6 +5,7 @@ import { outputType, nodeSummary } from "../lib/workflowGraph";
 import { WorkflowNode } from "../types/workflow";
 
 export function WorkflowNodeCard({ id, data, selected }: NodeProps<WorkflowNode>) {
+  const isGroup = data.kind === "group";
   const hasPromptInput = data.kind === "textToImage" || data.kind === "imageToImage";
   const hasImageInput = data.kind === "imageToImage" || data.kind === "output";
   const output = outputType(data.kind);
@@ -33,7 +34,10 @@ export function WorkflowNodeCard({ id, data, selected }: NodeProps<WorkflowNode>
   };
 
   return (
-    <section className={`workflow-node ${selected ? "is-selected" : ""}`} onContextMenu={handleContextMenu}>
+    <section
+      className={`workflow-node ${isGroup ? "is-group" : ""} ${selected ? "is-selected" : ""}`}
+      onContextMenu={handleContextMenu}
+    >
       {hasPromptInput && (
         <Handle
           id="prompt-in"

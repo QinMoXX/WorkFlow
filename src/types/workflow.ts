@@ -7,7 +7,8 @@ export type WorkflowNodeKind =
   | "imageInput"
   | "textToImage"
   | "imageToImage"
-  | "output";
+  | "output"
+  | "group";
 
 export type NodeRunStatus = "idle" | "queued" | "running" | "success" | "error" | "blocked";
 
@@ -31,6 +32,8 @@ export type WorkflowNodeData = {
   resultPath?: string;
   resultUrl?: string;
   error?: string;
+  groupWidth?: number;
+  groupHeight?: number;
 };
 
 export type WorkflowNode = Node<WorkflowNodeData, "workflowNode">;
@@ -41,6 +44,8 @@ export type WorkflowSnapshot = {
     id: string;
     kind: WorkflowNodeKind;
     position: { x: number; y: number };
+    parentId?: string | null;
+    extent?: "parent" | null;
     data: WorkflowNodeData;
   }>;
   edges: Array<{
@@ -56,9 +61,93 @@ export type WorkflowSnapshot = {
 export type RunResponse = {
   snapshot: WorkflowSnapshot;
   logs: string[];
+  runId: string;
 };
 
 export type ImportedImage = {
   imagePath: string;
   thumbnailPath?: string | null;
+};
+
+export type RunMode = "node" | "workflow";
+
+export type RunStartedEvent = {
+  runId: string;
+  mode: RunMode;
+  targetNodeId?: string;
+  nodeIds: string[];
+  startedAt: string;
+};
+
+export type RunNodeEvent = {
+  runId: string;
+  nodeId: string;
+  status: NodeRunStatus;
+  sequence: number;
+  timestamp: string;
+  node: {
+    id: string;
+    title: string;
+    kind: WorkflowNodeKind;
+    status: NodeRunStatus;
+    resultPath?: string | null;
+    resultUrl?: string | null;
+    lastOutputPath?: string | null;
+    error?: string | null;
+  };
+  output?: {
+    dataType?: WorkflowDataType | null;
+    localPath?: string | null;
+    remoteUrl?: string | null;
+    thumbnailPath?: string | null;
+    textPreview?: string | null;
+  } | null;
+  error?: RunError | null;
+  metrics?: RunNodeMetrics | null;
+};
+
+export type RunLogEvent = {
+  runId: string;
+  sequence: number;
+  timestamp: string;
+  level: "debug" | "info" | "warn" | "error";
+  message: string;
+  nodeId?: string | null;
+  code?: string | null;
+};
+
+export type RunFinishedEvent = {
+  runId: string;
+  status: "success" | "error" | "cancelled";
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  summary: {
+    total: number;
+    success: number;
+    error: number;
+    blocked: number;
+    skipped: number;
+  };
+  error?: RunError | null;
+};
+
+export type RunNodeMetrics = {
+  queuedAt?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  durationMs?: number | null;
+  providerId?: string | null;
+  providerName?: string | null;
+  model?: string | null;
+  retryCount?: number | null;
+};
+
+export type RunError = {
+  kind: string;
+  code: string;
+  message: string;
+  nodeId?: string | null;
+  causeNodeId?: string | null;
+  retryable: boolean;
 };

@@ -10,6 +10,7 @@ export const nodeTemplates: Array<{
   { kind: "textToImage", title: "文生图", description: "文本生成图片" },
   { kind: "imageToImage", title: "图生图", description: "图片与文本编辑" },
   { kind: "output", title: "输出", description: "自动保存上游图片" },
+  { kind: "group", title: "分组", description: "整理一组节点" },
 ];
 
 export const initialNodes: WorkflowNode[] = [
@@ -90,11 +91,16 @@ export function createNode(kind: WorkflowNodeKind, index: number): WorkflowNode 
     baseData.strength = 0.65;
     baseData.aspectRatio = "1:1";
   }
+  if (kind === "group") {
+    baseData.groupWidth = 520;
+    baseData.groupHeight = 320;
+  }
 
   return {
     id: `${kind}-${Date.now()}`,
     type: "workflowNode",
     position: { x: 120 + index * 34, y: 120 + index * 28 },
+    style: kind === "group" ? { width: 520, height: 320 } : undefined,
     data: baseData,
   };
 }

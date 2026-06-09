@@ -46,7 +46,7 @@ export function PropertyPanel({ node, providers, onChange, onImportImage, onRun 
           <span className="panel-kicker">节点属性</span>
           <h2>{data.title}</h2>
         </div>
-        <button type="button" onClick={onRun}>
+        <button type="button" onClick={onRun} disabled={data.kind === "group"}>
           运行
         </button>
       </header>
@@ -194,6 +194,13 @@ export function PropertyPanel({ node, providers, onChange, onImportImage, onRun 
             onChange={(event) => onChange({ saveDirectory: event.target.value })}
           />
         </label>
+      )}
+
+      {data.kind === "group" && (
+        <div className="empty-panel">
+          <strong>视觉分组</strong>
+          <span>用于整理和批量移动节点，不参与连线和运行语义。</span>
+        </div>
       )}
     </div>
   );

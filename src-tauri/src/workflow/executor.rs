@@ -1,16 +1,21 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use std::{
+    collections::HashSet,
     fs,
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 
 use super::{
     image_provider::{
         ImageProvider, ImageToImageInput, OpenAiCompatibleImageProvider, TextToImageInput,
     },
-    models::{RunResponse, WorkflowNodeKind, WorkflowSnapshot},
+    models::{
+        RunError, RunFinishedEvent, RunLogEvent, RunNodeEvent, RunNodeMetrics, RunNodeOutput,
+        RunNodeSnapshot, RunResponse, RunStartedEvent, RunSummary, WorkflowDataType,
+        WorkflowNodeKind, WorkflowSnapshot,
+    },
     providers::{resolve_ai_node_provider, ProviderCapability, ProviderConfig},
     storage::generated_assets_dir,
 };
@@ -20,44 +25,170 @@ pub fn run_nodes(
     providers: &[ProviderConfig],
     snapshot: &mut WorkflowSnapshot,
     execution_order: Vec<String>,
+    mode: &str,
+    target_node_id: Option<String>,
+    run_id: String,
 ) -> Result<RunResponse, String> {
     let mut logs = Vec::new();
+    let mut sequence = 0;
+    let mut failed_nodes = HashSet::new();
+    let started_at = timestamp();
+    let run_timer = Instant::now();
     let generated_dir = generated_assets_dir(app)?;
     fs::create_dir_all(&generated_dir).map_err(|error| error.to_string())?;
+    emit_started(
+        app,
+        RunStartedEvent {
+            run_id: run_id.clone(),
+            mode: mode.to_string(),
+            target_node_id,
+            node_ids: execution_order.clone(),
+            started_at: started_at.clone(),
+        },
+    );
 
-    for node_id in execution_order {
+    for node_id in &execution_order {
         let index = snapshot
             .nodes
             .iter()
-            .position(|node| node.id == node_id)
+            .position(|node| node.id == *node_id)
             .ok_or_else(|| format!("节点 {} 不存在", node_id))?;
+
+        if let Some(cause_node_id) = upstream_failure(snapshot, node_id, &failed_nodes) {
+            let message = "上游节点失败，当前节点未执行".to_string();
+            snapshot.nodes[index].data.status = "blocked".to_string();
+            snapshot.nodes[index].data.error = Some(message.clone());
+            logs.push(format!("{} 阻塞：{}", snapshot.nodes[index].data.title, message));
+            sequence += 1;
+            emit_node(
+                app,
+                &run_id,
+                &mut sequence,
+                snapshot,
+                index,
+                None,
+                Some(run_error(
+                    "validation",
+                    "upstreamFailed",
+                    message,
+                    Some(node_id.clone()),
+                    Some(cause_node_id),
+                    false,
+                )),
+                None,
+            );
+            continue;
+        }
 
         snapshot.nodes[index].data.status = "running".to_string();
         snapshot.nodes[index].data.error = None;
+        let node_started_at = timestamp();
+        let node_timer = Instant::now();
+        sequence += 1;
+        emit_node(
+            app,
+            &run_id,
+            &mut sequence,
+            snapshot,
+            index,
+            None,
+            None,
+            Some(node_metrics(
+                snapshot,
+                index,
+                providers,
+                None,
+                Some(node_started_at.clone()),
+                None,
+                None,
+            )),
+        );
 
         match execute_node(snapshot, index, &generated_dir, providers) {
             Ok(log) => {
                 snapshot.nodes[index].data.status = "success".to_string();
-                logs.push(log);
+                let finished_at = timestamp();
+                let duration_ms = node_timer.elapsed().as_millis();
+                logs.push(format!("{}，耗时 {} ms", log, duration_ms));
+                emit_log(app, &run_id, &mut sequence, "info", &logs[logs.len() - 1], Some(node_id));
+                sequence += 1;
+                emit_node(
+                    app,
+                    &run_id,
+                    &mut sequence,
+                    snapshot,
+                    index,
+                    node_output(snapshot, index),
+                    None,
+                    Some(node_metrics(
+                        snapshot,
+                        index,
+                        providers,
+                        None,
+                        Some(node_started_at),
+                        Some(finished_at),
+                        Some(duration_ms),
+                    )),
+                );
             }
             Err(error) => {
                 snapshot.nodes[index].data.status = "error".to_string();
                 snapshot.nodes[index].data.error = Some(error.clone());
+                failed_nodes.insert(node_id.clone());
                 logs.push(format!(
                     "{} 失败：{}",
                     snapshot.nodes[index].data.title, error
                 ));
-                return Ok(RunResponse {
-                    snapshot: snapshot.clone(),
-                    logs,
-                });
+                emit_log(app, &run_id, &mut sequence, "error", &logs[logs.len() - 1], Some(node_id));
+                sequence += 1;
+                let error_kind = classify_error(&error).to_string();
+                emit_node(
+                    app,
+                    &run_id,
+                    &mut sequence,
+                    snapshot,
+                    index,
+                    None,
+                    Some(run_error(
+                        &error_kind,
+                        "nodeFailed",
+                        error,
+                        Some(node_id.clone()),
+                        None,
+                        true,
+                    )),
+                    Some(node_metrics(
+                        snapshot,
+                        index,
+                        providers,
+                        None,
+                        Some(node_started_at),
+                        Some(timestamp()),
+                        Some(node_timer.elapsed().as_millis()),
+                    )),
+                );
             }
         }
     }
 
+    let summary = run_summary(snapshot, &execution_order);
+    emit_finished(
+        app,
+        RunFinishedEvent {
+            run_id: run_id.clone(),
+            status: if summary.error > 0 { "error" } else { "success" }.to_string(),
+            started_at,
+            finished_at: timestamp(),
+            duration_ms: run_timer.elapsed().as_millis(),
+            summary,
+            error: None,
+        },
+    );
+
     Ok(RunResponse {
         snapshot: snapshot.clone(),
         logs,
+        run_id,
     })
 }
 
@@ -162,6 +293,7 @@ fn execute_node(
                 Ok(format!("{} 保存输出：{}", node.data.title, output_path))
             }
         }
+        WorkflowNodeKind::Group => Ok(format!("{} 为视觉分组，无需执行", node.data.title)),
     }
 }
 
@@ -317,4 +449,216 @@ fn parse_seed(seed: Option<&str>) -> Result<Option<i64>, String> {
 
 fn is_remote_url(value: &str) -> bool {
     value.starts_with("http://") || value.starts_with("https://")
+}
+
+fn timestamp() -> String {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().to_string())
+        .unwrap_or_else(|_| "0".to_string())
+}
+
+fn emit_started(app: &AppHandle, payload: RunStartedEvent) {
+    let _ = app.emit("workflow://run/started", payload);
+}
+
+fn emit_finished(app: &AppHandle, payload: RunFinishedEvent) {
+    let _ = app.emit("workflow://run/finished", payload);
+}
+
+fn emit_log(
+    app: &AppHandle,
+    run_id: &str,
+    sequence: &mut u64,
+    level: &str,
+    message: &str,
+    node_id: Option<&String>,
+) {
+    *sequence += 1;
+    let _ = app.emit(
+        "workflow://run/log",
+        RunLogEvent {
+            run_id: run_id.to_string(),
+            sequence: *sequence,
+            timestamp: timestamp(),
+            level: level.to_string(),
+            message: message.to_string(),
+            node_id: node_id.cloned(),
+            code: None,
+        },
+    );
+}
+
+fn emit_node(
+    app: &AppHandle,
+    run_id: &str,
+    sequence: &mut u64,
+    snapshot: &WorkflowSnapshot,
+    node_index: usize,
+    output: Option<RunNodeOutput>,
+    error: Option<RunError>,
+    metrics: Option<RunNodeMetrics>,
+) {
+    let node = &snapshot.nodes[node_index];
+    let _ = app.emit(
+        "workflow://run/node",
+        RunNodeEvent {
+            run_id: run_id.to_string(),
+            node_id: node.id.clone(),
+            status: node.data.status.clone(),
+            sequence: *sequence,
+            timestamp: timestamp(),
+            node: RunNodeSnapshot {
+                id: node.id.clone(),
+                title: node.data.title.clone(),
+                kind: node.kind,
+                status: node.data.status.clone(),
+                result_path: node.data.result_path.clone(),
+                result_url: node.data.result_url.clone(),
+                last_output_path: node.data.last_output_path.clone(),
+                error: node.data.error.clone(),
+            },
+            output,
+            error,
+            metrics,
+        },
+    );
+}
+
+fn run_error(
+    kind: &str,
+    code: &str,
+    message: String,
+    node_id: Option<String>,
+    cause_node_id: Option<String>,
+    retryable: bool,
+) -> RunError {
+    RunError {
+        kind: kind.to_string(),
+        code: code.to_string(),
+        message,
+        node_id,
+        cause_node_id,
+        retryable,
+    }
+}
+
+fn node_output(snapshot: &WorkflowSnapshot, node_index: usize) -> Option<RunNodeOutput> {
+    let node = &snapshot.nodes[node_index];
+    let data_type = match node.kind {
+        WorkflowNodeKind::TextInput => Some(WorkflowDataType::Text),
+        WorkflowNodeKind::ImageInput | WorkflowNodeKind::TextToImage | WorkflowNodeKind::ImageToImage => {
+            Some(WorkflowDataType::Image)
+        }
+        WorkflowNodeKind::Output => Some(WorkflowDataType::Image),
+        WorkflowNodeKind::Group => None,
+    };
+
+    Some(RunNodeOutput {
+        data_type,
+        local_path: node
+            .data
+            .result_path
+            .clone()
+            .or_else(|| node.data.image_path.clone())
+            .or_else(|| node.data.last_output_path.clone()),
+        remote_url: node.data.result_url.clone(),
+        thumbnail_path: node.data.thumbnail_path.clone(),
+        text_preview: node.data.content.clone().map(|value| value.chars().take(80).collect()),
+    })
+}
+
+fn node_metrics(
+    snapshot: &WorkflowSnapshot,
+    node_index: usize,
+    providers: &[ProviderConfig],
+    queued_at: Option<String>,
+    started_at: Option<String>,
+    finished_at: Option<String>,
+    duration_ms: Option<u128>,
+) -> RunNodeMetrics {
+    let node = &snapshot.nodes[node_index];
+    let provider_name = node
+        .data
+        .provider_id
+        .as_deref()
+        .and_then(|provider_id| providers.iter().find(|provider| provider.id == provider_id))
+        .map(|provider| provider.name.clone());
+
+    RunNodeMetrics {
+        queued_at,
+        started_at,
+        finished_at,
+        duration_ms,
+        provider_id: node.data.provider_id.clone(),
+        provider_name,
+        model: node.data.model.clone(),
+        retry_count: Some(0),
+    }
+}
+
+fn upstream_failure(
+    snapshot: &WorkflowSnapshot,
+    node_id: &str,
+    failed_nodes: &HashSet<String>,
+) -> Option<String> {
+    failed_nodes
+        .iter()
+        .find(|failed_node_id| has_path(snapshot, failed_node_id, node_id))
+        .cloned()
+}
+
+fn has_path(snapshot: &WorkflowSnapshot, source_id: &str, target_id: &str) -> bool {
+    let mut stack = vec![source_id.to_string()];
+    let mut visited = HashSet::new();
+
+    while let Some(node_id) = stack.pop() {
+        if !visited.insert(node_id.clone()) {
+            continue;
+        }
+        for edge in snapshot.edges.iter().filter(|edge| edge.source == node_id) {
+            if edge.target == target_id {
+                return true;
+            }
+            stack.push(edge.target.clone());
+        }
+    }
+
+    false
+}
+
+fn run_summary(snapshot: &WorkflowSnapshot, execution_order: &[String]) -> RunSummary {
+    let mut summary = RunSummary {
+        total: execution_order.len(),
+        ..RunSummary::default()
+    };
+
+    for node_id in execution_order {
+        let status = snapshot
+            .nodes
+            .iter()
+            .find(|node| node.id == *node_id)
+            .map(|node| node.data.status.as_str())
+            .unwrap_or("idle");
+        match status {
+            "success" => summary.success += 1,
+            "error" => summary.error += 1,
+            "blocked" => summary.blocked += 1,
+            _ => summary.skipped += 1,
+        }
+    }
+
+    summary
+}
+
+fn classify_error(error: &str) -> &str {
+    if error.contains("供应商") || error.contains("模型") || error.contains("API Key") {
+        "providerConfig"
+    } else if error.contains("文件") || error.contains("目录") || error.contains("路径") || error.contains("不存在") {
+        "fileSystem"
+    } else if error.contains("网络") || error.contains("请求") || error.contains("HTTP") {
+        "network"
+    } else {
+        "validation"
+    }
 }

@@ -1,4 +1,9 @@
-use std::{borrow::Cow, fs, path::Path};
+use std::{
+    borrow::Cow,
+    fs,
+    path::Path,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use arboard::{Clipboard, ImageData};
 use tauri::AppHandle;
@@ -91,21 +96,57 @@ pub fn load_provider_configs(app: AppHandle) -> Result<Vec<ProviderConfig>, Stri
 }
 
 #[tauri::command]
-pub fn run_node(
+pub async fn run_node(
     app: AppHandle,
-    mut snapshot: WorkflowSnapshot,
+    snapshot: WorkflowSnapshot,
     node_id: String,
 ) -> Result<RunResponse, String> {
-    validate_connections(&snapshot)?;
-    let providers = load_provider_config_list(&app)?;
-    let execution_order = execution_order_for_node(&snapshot, &node_id)?;
-    run_nodes(&app, &providers, &mut snapshot, execution_order)
+    let run_id = create_run_id();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut snapshot = snapshot;
+        validate_connections(&snapshot)?;
+        let providers = load_provider_config_list(&app)?;
+        let execution_order = execution_order_for_node(&snapshot, &node_id)?;
+        run_nodes(
+            &app,
+            &providers,
+            &mut snapshot,
+            execution_order,
+            "node",
+            Some(node_id),
+            run_id,
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-pub fn run_workflow(app: AppHandle, mut snapshot: WorkflowSnapshot) -> Result<RunResponse, String> {
-    validate_connections(&snapshot)?;
-    let providers = load_provider_config_list(&app)?;
-    let execution_order = topological_order(&snapshot)?;
-    run_nodes(&app, &providers, &mut snapshot, execution_order)
+pub async fn run_workflow(app: AppHandle, snapshot: WorkflowSnapshot) -> Result<RunResponse, String> {
+    let run_id = create_run_id();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut snapshot = snapshot;
+        validate_connections(&snapshot)?;
+        let providers = load_provider_config_list(&app)?;
+        let execution_order = topological_order(&snapshot)?;
+        run_nodes(
+            &app,
+            &providers,
+            &mut snapshot,
+            execution_order,
+            "workflow",
+            None,
+            run_id,
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+fn create_run_id() -> String {
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or_default();
+    format!("run-{}-{}", millis, std::process::id())
 }

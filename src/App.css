@@ -29,6 +29,11 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr) 320px;
@@ -153,6 +158,19 @@ button {
 .workflow-node.is-selected {
   border-color: #1f766c;
   box-shadow: 0 0 0 3px rgba(31, 118, 108, 0.16);
+}
+
+.workflow-node.is-group {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 1px dashed #8fa0ad;
+  background: rgba(248, 250, 251, 0.68);
+  box-shadow: none;
+}
+
+.workflow-node.is-group p {
+  min-height: 0;
 }
 
 .node-header {
@@ -525,6 +543,25 @@ button {
 .settings-footer {
   justify-content: flex-end;
   border-top: 1px solid #d8dee4;
+}
+
+.settings-errors {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-right: auto;
+}
+
+.settings-errors span {
+  border: 1px solid #efcaca;
+  border-radius: 6px;
+  padding: 5px 7px;
+  background: #fff7f7;
+  color: #a12d2d;
+  font-size: 12px;
+  line-height: 16px;
 }
 
 .log-panel {

@@ -9,6 +9,7 @@ WorkFlow 是一个基于 Tauri 2、React 19、Vite 和 React Flow 的节点式 A
 当前支持：
 
 - 在无限画布上创建、移动、选择和连接节点。
+- 当前已支持基础节点选择和移动；框选、多选批量移动、快捷键、撤销重做、节点复制粘贴、自动布局、节点分组和缩放定位是第一版需要补齐的画布编辑能力。
 - 使用文本输入节点为文生图或图生图节点提供 prompt。
 - 使用图片输入节点导入本地图片，作为图生图或输出节点输入。
 - 配置 OpenAI 兼容的图片模型供应商。
@@ -16,7 +17,7 @@ WorkFlow 是一个基于 Tauri 2、React 19、Vite 和 React Flow 的节点式 A
 - 在节点中预览运行结果图片。
 - 右键图片执行保存、复制到剪切板、在文件夹中显示。
 - 右键删除节点和连线。
-- 自动保存当前工作流，下次打开应用恢复画布。
+- 手动保存当前工作流，下次打开应用恢复画布。第一版只维护 1 个工作流，后续再扩展多个工作流项目。
 
 界面说明：
 
@@ -118,9 +119,19 @@ npm run tauri build
 
 运行时会校验节点选择的供应商、模型和能力是否匹配。如果模型能力配置错误，会出现“模型预设不存在或能力不匹配”一类错误。
 
+## 环境变量
+
+当前项目不需要 `.env` 才能启动。AI Key 通过应用内“AI 设置”面板填写，不通过 `OPENAI_API_KEY`、`AGNES_API_KEY` 或 `VITE_*` 环境变量读取。
+
+当前代码中使用的环境变量：
+
+- `TAURI_DEV_HOST`：可选，用于配置 Vite/Tauri 开发服务器监听地址，通常本地开发不需要设置。
+
+代理也不通过 `HTTP_PROXY` 或 `HTTPS_PROXY` 读取，而是在 AI 设置里通过“代理地址”配置。
+
 ## API Key 存储现状和风险
 
-当前 API Key 保存在 Tauri 应用数据目录下的 JSON 文件中：
+当前阶段 API Key 由前端配置界面录入并保存在前端状态中，再通过 Tauri command 保存到 Tauri 应用数据目录下的 JSON 文件中：
 
 ```text
 appData/
@@ -141,11 +152,11 @@ appData/
 - 不要把 `appData/providers/config.json` 分享给他人。
 - 发生泄露时立即在供应商后台吊销并更换 Key。
 
-后续更合理的方案是接入系统安全存储，例如 Windows Credential Manager、macOS Keychain 或 Linux Secret Service，或者至少对本地配置做用户级加密。
+后续更合理的方案是增加独立 API route 后端。前端工具只调用该后端，由后端统一保存和管理 API Key、转换供应商协议、处理鉴权、审计、限流和错误归一化。
 
 ## 本地数据和资源文件
 
-应用通过 Tauri 的 `app_data_dir()` 保存工作流和资源。Windows 上通常位于 `%APPDATA%` 下，实际目录由 Tauri 根据应用标识 `com.qm.workflow-app` 决定。
+应用通过 Tauri 的 `app_data_dir()` 保存工作流和资源。Windows 上通常位于 `%APPDATA%` 下，实际目录由 Tauri 根据应用标识 `com.qm.workflow-app` 决定。第一版只保存 1 个当前工作流，且由用户手动触发保存。
 
 当前目录结构：
 
@@ -170,6 +181,19 @@ appData/
 - `assets/thumbnails/`：导入图片缩略图。
 
 工作流 JSON 只保存图片路径和元信息，不把图片二进制直接写入 JSON。
+
+后续支持多工作流项目时，建议演进为：
+
+```text
+appData/
+  workflows/
+    {projectId}/
+      workflow.json
+      assets/
+        imported/
+        generated/
+        thumbnails/
+```
 
 ## 常见错误
 

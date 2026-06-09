@@ -228,6 +228,10 @@ button {
   background: #c23b3b;
 }
 
+.status-blocked {
+  background: #6d7680;
+}
+
 .node-result,
 .node-error {
   margin-top: 8px;

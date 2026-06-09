@@ -9,7 +9,7 @@ export type WorkflowNodeKind =
   | "imageToImage"
   | "output";
 
-export type NodeRunStatus = "idle" | "queued" | "running" | "success" | "error";
+export type NodeRunStatus = "idle" | "queued" | "running" | "success" | "error" | "blocked";
 
 export type WorkflowNodeData = {
   kind: WorkflowNodeKind;

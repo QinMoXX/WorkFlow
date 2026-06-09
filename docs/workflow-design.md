@@ -147,10 +147,7 @@ interface ProviderConfig {
   name: string;
   baseUrl: string;
   apiKey: string;
-  capabilities: {
-    textToImage: boolean;
-    imageToImage: boolean;
-  };
+  proxyUrl?: string;
   models: ProviderModel[];
 }
 

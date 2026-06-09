@@ -267,6 +267,10 @@ src-tauri/
   src/workflow/storage.rs     # 工作流和图片文件存储
 ```
 
+## 数据契约
+
+前后端共享的工作流快照、节点数据和供应商配置契约见 [docs/workflow-json-schema.md](docs/workflow-json-schema.md)。新增字段或调整字段语义时，应先更新该文档，再同步修改 TypeScript 类型和 Rust serde 类型。
+
 ## 提交前检查
 
 提交改动前至少运行：

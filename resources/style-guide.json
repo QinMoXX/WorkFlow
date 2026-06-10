@@ -1,0 +1,48 @@
+{
+  "theme": {
+    "colors": {
+      "app": "#0b0f14",
+      "canvas": "#0d1218",
+      "panel": "#121922",
+      "panelRaised": "#161f2a",
+      "control": "#1b2430",
+      "controlHover": "#222d3a",
+      "inverse": "#eef3f8",
+      "borderSubtle": "#24303d",
+      "borderDefault": "#334253",
+      "borderStrong": "#52657a",
+      "textPrimary": "#edf3f8",
+      "textSecondary": "#aeb9c6",
+      "textMuted": "#6f7c8b",
+      "textInverse": "#111821",
+      "accent": "#61b7ff",
+      "accentStrong": "#2f91ff",
+      "success": "#4fd19b",
+      "warning": "#f0b45f",
+      "danger": "#ff6b7a",
+      "new": "#31c6df"
+    },
+    "spacing": {
+      "1": "4px",
+      "2": "8px",
+      "3": "12px",
+      "4": "16px",
+      "5": "20px",
+      "6": "24px",
+      "8": "32px"
+    },
+    "radius": {
+      "xs": "4px",
+      "sm": "6px",
+      "md": "8px",
+      "lg": "12px",
+      "xl": "16px",
+      "pill": "999px"
+    },
+    "shadow": {
+      "panel": "0 24px 80px rgba(2, 8, 15, 0.36)",
+      "floating": "0 16px 44px rgba(2, 8, 15, 0.32)",
+      "selected": "0 0 0 3px rgba(97, 183, 255, 0.18)"
+    }
+  }
+}

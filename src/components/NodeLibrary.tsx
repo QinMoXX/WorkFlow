@@ -1,16 +1,17 @@
-import { nodeTemplates } from "../lib/nodeCatalog";
+import { Bot, Play, Plus, Save, Square } from "lucide-react";
+import { appCopy, nodeLibraryCopy, nodeTemplates } from "../data/mockData";
 import { WorkflowNodeKind } from "../types/workflow";
 
-type NodeLibraryProps = {
-  onAddNode: (kind: WorkflowNodeKind) => void;
-  onRunWorkflow: () => void;
-  onCancelRun: () => void;
-  onSaveWorkflow: () => void;
-  onOpenSettings: () => void;
-  isRunActive: boolean;
-  canCancelRun: boolean;
-  isCancellingRun: boolean;
-};
+export interface ReadonlyNodeLibraryProps {
+  readonly onAddNode: (kind: WorkflowNodeKind) => void;
+  readonly onRunWorkflow: () => void;
+  readonly onCancelRun: () => void;
+  readonly onSaveWorkflow: () => void;
+  readonly onOpenSettings: () => void;
+  readonly isRunActive: boolean;
+  readonly canCancelRun: boolean;
+  readonly isCancellingRun: boolean;
+}
 
 export function NodeLibrary({
   onAddNode,
@@ -21,39 +22,69 @@ export function NodeLibrary({
   isRunActive,
   canCancelRun,
   isCancellingRun,
-}: NodeLibraryProps) {
+}: ReadonlyNodeLibraryProps) {
   return (
-    <aside className="node-library">
-      <div className="brand">
-        <span>WorkFlow</span>
-        <small>AI 图片工作流</small>
+    <aside className="flex min-h-0 flex-col gap-4 border-r border-border-subtle bg-panel p-5">
+      <div className="border-b border-border-subtle pb-4">
+        <span className="block text-2xl font-bold tracking-normal text-text-primary">{appCopy.brandName}</span>
+        <small className="text-xs font-medium text-text-muted">{appCopy.brandSubtitle}</small>
       </div>
-      <div className="library-list">
+
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold uppercase tracking-[0.08em] text-text-muted">
+          {appCopy.nodeLibraryTitle}
+        </span>
+        <Plus size={16} className="text-text-muted" />
+      </div>
+
+      <div className="grid gap-2">
         {nodeTemplates.map((template) => (
           <button
             key={template.kind}
-            className="library-item"
+            className="grid gap-1 rounded-lg border border-border-default bg-control p-3 text-left transition hover:border-border-strong hover:bg-control-hover"
             type="button"
             onClick={() => onAddNode(template.kind)}
           >
-            <strong>{template.title}</strong>
-            <span>{template.description}</span>
+            <strong className="text-sm font-bold text-text-primary">{template.title}</strong>
+            <span className="text-xs leading-4 text-text-muted">{template.description}</span>
           </button>
         ))}
       </div>
-      <button className="primary-action" type="button" onClick={onRunWorkflow}>
-        {isRunActive ? "运行全部..." : "运行全部"}
+
+      <button
+        className="mt-auto inline-flex h-10 items-center justify-center gap-2 rounded-pill bg-inverse px-4 text-sm font-bold text-text-inverse transition hover:bg-text-primary"
+        type="button"
+        onClick={onRunWorkflow}
+      >
+        <Play size={16} />
+        {isRunActive ? nodeLibraryCopy.runAllActive : nodeLibraryCopy.runAllIdle}
       </button>
       {isRunActive && (
-        <button className="danger-action" type="button" onClick={onCancelRun} disabled={!canCancelRun || isCancellingRun}>
-          {isCancellingRun ? "正在打断" : "打断运行"}
+        <button
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-danger/40 bg-danger/10 px-4 text-sm font-bold text-danger transition hover:bg-danger/15"
+          type="button"
+          onClick={onCancelRun}
+          disabled={!canCancelRun || isCancellingRun}
+        >
+          <Square size={15} />
+          {isCancellingRun ? nodeLibraryCopy.cancelling : nodeLibraryCopy.cancelRun}
         </button>
       )}
-      <button className="secondary-action" type="button" onClick={onSaveWorkflow}>
-        保存工作流
+      <button
+        className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-border-default bg-control px-4 text-sm font-semibold text-text-secondary transition hover:bg-control-hover hover:text-text-primary"
+        type="button"
+        onClick={onSaveWorkflow}
+      >
+        <Save size={15} />
+        {nodeLibraryCopy.saveWorkflow}
       </button>
-      <button className="secondary-action" type="button" onClick={onOpenSettings}>
-        AI 配置
+      <button
+        className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-border-default bg-control px-4 text-sm font-semibold text-text-secondary transition hover:bg-control-hover hover:text-text-primary"
+        type="button"
+        onClick={onOpenSettings}
+      >
+        <Bot size={15} />
+        {nodeLibraryCopy.aiSettings}
       </button>
     </aside>
   );

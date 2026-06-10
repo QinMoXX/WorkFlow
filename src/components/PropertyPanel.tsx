@@ -1,18 +1,19 @@
 import { WorkflowNode, WorkflowNodeData } from "../types/workflow";
 import { ProviderConfig } from "../types/provider";
 import { providerCapabilityForNode } from "../lib/providerPresets";
+import { appCopy, aspectRatioOptions, propertyPanelCopy } from "../data/mockData";
 
-type PropertyPanelProps = {
-  node: WorkflowNode | null;
-  providers: ProviderConfig[];
-  onChange: (patch: Partial<WorkflowNodeData>) => void;
-  onImportImage: (file: File) => void;
-  onRun: () => void;
-  onCancelRun: () => void;
-  canRun: boolean;
-  canCancelRun: boolean;
-  isCancellingRun: boolean;
-};
+export interface ReadonlyPropertyPanelProps {
+  readonly node: WorkflowNode | null;
+  readonly providers: ProviderConfig[];
+  readonly onChange: (patch: Partial<WorkflowNodeData>) => void;
+  readonly onImportImage: (file: File) => void;
+  readonly onRun: () => void;
+  readonly onCancelRun: () => void;
+  readonly canRun: boolean;
+  readonly canCancelRun: boolean;
+  readonly isCancellingRun: boolean;
+}
 
 export function PropertyPanel({
   node,
@@ -24,12 +25,12 @@ export function PropertyPanel({
   canRun,
   canCancelRun,
   isCancellingRun,
-}: PropertyPanelProps) {
+}: ReadonlyPropertyPanelProps) {
   if (!node) {
     return (
-      <div className="empty-panel">
-        <strong>未选择节点</strong>
-        <span>选择画布上的节点后编辑参数。</span>
+      <div className="grid gap-2 rounded-lg border border-dashed border-border-default bg-control p-4">
+        <strong className="text-sm text-text-primary">{appCopy.emptySelectionTitle}</strong>
+        <span className="text-xs leading-4 text-text-muted">{appCopy.emptySelectionDescription}</span>
       </div>
     );
   }
@@ -54,30 +55,40 @@ export function PropertyPanel({
   };
 
   return (
-    <div className="property-form">
-      <header>
+    <div className="grid gap-4">
+      <header className="flex items-center justify-between gap-3 border-b border-border-subtle pb-4">
         <div>
-          <span className="panel-kicker">节点属性</span>
-          <h2>{data.title}</h2>
+          <span className="text-xs font-bold uppercase tracking-[0.08em] text-text-muted">
+            {appCopy.selectedPanelKicker}
+          </span>
+          <h2 className="mt-1 text-xl font-bold leading-7 text-text-primary">{data.title}</h2>
         </div>
         <button
+          className="h-9 rounded-pill bg-inverse px-4 text-sm font-bold text-text-inverse transition hover:bg-text-primary"
           type="button"
           onClick={canCancelRun ? onCancelRun : onRun}
           disabled={data.kind === "group" || (!canRun && !canCancelRun) || isCancellingRun}
         >
-          {canCancelRun ? (isCancellingRun ? "正在打断" : "打断") : canRun ? "运行" : "运行中"}
+          {canCancelRun
+            ? isCancellingRun
+              ? propertyPanelCopy.cancelling
+              : propertyPanelCopy.cancel
+            : canRun
+              ? propertyPanelCopy.run
+              : propertyPanelCopy.running}
         </button>
       </header>
 
-      <label>
-        名称
-        <input value={data.title} onChange={(event) => onChange({ title: event.target.value })} />
+      <label className={fieldClassName}>
+        {propertyPanelCopy.name}
+        <input className={inputClassName} value={data.title} onChange={(event) => onChange({ title: event.target.value })} />
       </label>
 
       {data.kind === "textInput" && (
-        <label>
-          文本内容
+        <label className={fieldClassName}>
+          {propertyPanelCopy.textContent}
           <textarea
+            className={inputClassName}
             value={data.content ?? ""}
             onChange={(event) => onChange({ content: event.target.value })}
             rows={8}
@@ -87,9 +98,10 @@ export function PropertyPanel({
 
       {data.kind === "imageInput" && (
         <>
-          <label>
-            选择图片
+          <label className={fieldClassName}>
+            {propertyPanelCopy.chooseImage}
             <input
+              className={inputClassName}
               type="file"
               accept="image/*"
               onChange={(event) => {
@@ -99,9 +111,10 @@ export function PropertyPanel({
               }}
             />
           </label>
-          <label>
-            图片路径
+          <label className={fieldClassName}>
+            {propertyPanelCopy.imagePath}
             <input
+              className={inputClassName}
               value={data.imagePath ?? ""}
               onChange={(event) =>
                 onChange({
@@ -110,7 +123,7 @@ export function PropertyPanel({
                   resultPath: event.target.value,
                 })
               }
-              placeholder="/path/to/image.png"
+              placeholder={propertyPanelCopy.imagePathPlaceholder}
             />
           </label>
         </>
@@ -118,13 +131,14 @@ export function PropertyPanel({
 
       {(data.kind === "textToImage" || data.kind === "imageToImage") && (
         <>
-          <label>
-            供应商
+          <label className={fieldClassName}>
+            {propertyPanelCopy.provider}
             <select
+              className={inputClassName}
               value={data.providerId ?? ""}
               onChange={(event) => handleProviderChange(event.target.value)}
             >
-              <option value="">选择供应商预设</option>
+              <option value="">{propertyPanelCopy.providerPlaceholder}</option>
               {selectableProviders.map((provider) => (
                 <option key={provider.id} value={provider.id}>
                   {provider.name || provider.id}
@@ -132,10 +146,10 @@ export function PropertyPanel({
               ))}
             </select>
           </label>
-          <label>
-            模型
-            <select value={data.model ?? ""} onChange={(event) => onChange({ model: event.target.value })}>
-              <option value="">选择模型</option>
+          <label className={fieldClassName}>
+            {propertyPanelCopy.model}
+            <select className={inputClassName} value={data.model ?? ""} onChange={(event) => onChange({ model: event.target.value })}>
+              <option value="">{propertyPanelCopy.modelPlaceholder}</option>
               {selectableModels.map((model) => (
                 <option key={model.id} value={model.id}>
                   {model.name || model.id}
@@ -143,45 +157,49 @@ export function PropertyPanel({
               ))}
             </select>
           </label>
-          <label>
-            Prompt 覆盖
+          <label className={fieldClassName}>
+            {propertyPanelCopy.promptOverride}
             <textarea
+              className={inputClassName}
               value={data.promptOverride ?? ""}
               onChange={(event) => onChange({ promptOverride: event.target.value })}
               rows={5}
             />
           </label>
-          <label>
-            画幅
+          <label className={fieldClassName}>
+            {propertyPanelCopy.aspectRatio}
             <select
+              className={inputClassName}
               value={data.aspectRatio ?? "1:1"}
               onChange={(event) => onChange({ aspectRatio: event.target.value })}
             >
-              <option value="1:1">1:1</option>
-              <option value="4:3">4:3</option>
-              <option value="3:4">3:4</option>
-              <option value="16:9">16:9</option>
-              <option value="9:16">9:16</option>
+              {aspectRatioOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
             </select>
           </label>
-          <label>
-            风格
+          <label className={fieldClassName}>
+            {propertyPanelCopy.style}
             <input
+              className={inputClassName}
               value={data.stylePreset ?? ""}
               onChange={(event) => onChange({ stylePreset: event.target.value })}
             />
           </label>
-          <label>
-            Seed
-            <input value={data.seed ?? ""} onChange={(event) => onChange({ seed: event.target.value })} />
+          <label className={fieldClassName}>
+            {propertyPanelCopy.seed}
+            <input className={inputClassName} value={data.seed ?? ""} onChange={(event) => onChange({ seed: event.target.value })} />
           </label>
         </>
       )}
 
       {data.kind === "textToImage" && (
-        <label>
-          负向 Prompt
+        <label className={fieldClassName}>
+          {propertyPanelCopy.negativePrompt}
           <textarea
+            className={inputClassName}
             value={data.negativePrompt ?? ""}
             onChange={(event) => onChange({ negativePrompt: event.target.value })}
             rows={4}
@@ -190,9 +208,10 @@ export function PropertyPanel({
       )}
 
       {data.kind === "imageToImage" && (
-        <label>
-          修改强度
+        <label className={fieldClassName}>
+          {propertyPanelCopy.strength}
           <input
+            className="accent-accent"
             type="range"
             min="0"
             max="1"
@@ -200,14 +219,15 @@ export function PropertyPanel({
             value={data.strength ?? 0.65}
             onChange={(event) => onChange({ strength: Number(event.target.value) })}
           />
-          <span>{data.strength ?? 0.65}</span>
+          <span className="text-xs text-text-muted">{data.strength ?? 0.65}</span>
         </label>
       )}
 
       {data.kind === "output" && (
-        <label>
-          保存目录
+        <label className={fieldClassName}>
+          {propertyPanelCopy.saveDirectory}
           <input
+            className={inputClassName}
             value={data.saveDirectory ?? ""}
             onChange={(event) => onChange({ saveDirectory: event.target.value })}
           />
@@ -215,11 +235,15 @@ export function PropertyPanel({
       )}
 
       {data.kind === "group" && (
-        <div className="empty-panel">
-          <strong>视觉分组</strong>
-          <span>用于整理和批量移动节点，不参与连线和运行语义。</span>
+        <div className="grid gap-2 rounded-lg border border-dashed border-border-default bg-control p-4">
+          <strong className="text-sm text-text-primary">{appCopy.groupTitle}</strong>
+          <span className="text-xs leading-4 text-text-muted">{appCopy.groupDescription}</span>
         </div>
       )}
     </div>
   );
 }
+
+const fieldClassName = "grid gap-2 text-sm font-semibold text-text-secondary";
+const inputClassName =
+  "w-full rounded-md border border-border-default bg-control px-3 py-2 text-sm font-normal text-text-primary outline-none transition placeholder:text-text-muted focus:border-accent focus:ring-2 focus:ring-accent/20";

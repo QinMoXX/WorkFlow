@@ -3,8 +3,21 @@ import { Handle, NodeProps, Position } from "@xyflow/react";
 import { NodeImagePreview } from "./NodeImagePreview";
 import { outputType, nodeSummary } from "../lib/workflowGraph";
 import { WorkflowNode } from "../types/workflow";
+import { nodeCardCopy, runStateLabels } from "../data/mockData";
 
-export function WorkflowNodeCard({ id, data, selected }: NodeProps<WorkflowNode>) {
+export interface ReadonlyWorkflowNodeCardProps extends NodeProps<WorkflowNode> {}
+
+const statusClassNames: Record<WorkflowNode["data"]["status"], string> = {
+  idle: "bg-text-muted",
+  queued: "bg-text-muted",
+  running: "bg-warning",
+  success: "bg-success",
+  error: "bg-danger",
+  blocked: "bg-text-muted",
+  cancelled: "bg-text-muted",
+};
+
+export function WorkflowNodeCard({ id, data, selected }: ReadonlyWorkflowNodeCardProps) {
   const isGroup = data.kind === "group";
   const hasPromptInput = data.kind === "textToImage" || data.kind === "imageToImage";
   const hasImageInput = data.kind === "imageToImage" || data.kind === "output";
@@ -35,7 +48,14 @@ export function WorkflowNodeCard({ id, data, selected }: NodeProps<WorkflowNode>
 
   return (
     <section
-      className={`workflow-node ${isGroup ? "is-group" : ""} ${selected ? "is-selected" : ""}`}
+      className={[
+        isGroup
+          ? "h-full w-full rounded-xl border border-dashed border-border-strong bg-panel/50 p-4"
+          : "w-[240px] rounded-xl border bg-panel p-3 shadow-floating",
+        selected
+          ? "border-accent shadow-selected"
+          : "border-border-default",
+      ].join(" ")}
       onContextMenu={handleContextMenu}
     >
       {hasPromptInput && (
@@ -43,7 +63,7 @@ export function WorkflowNodeCard({ id, data, selected }: NodeProps<WorkflowNode>
           id="prompt-in"
           type="target"
           position={Position.Left}
-          className="handle handle-text"
+          className="workflow-node-handle workflow-node-handle-text"
           style={{ top: hasImageInput ? 34 : 46 }}
         />
       )}
@@ -52,38 +72,39 @@ export function WorkflowNodeCard({ id, data, selected }: NodeProps<WorkflowNode>
           id="image-in"
           type="target"
           position={Position.Left}
-          className="handle handle-image"
+          className="workflow-node-handle workflow-node-handle-image"
           style={{ top: hasPromptInput ? 72 : 46 }}
         />
       )}
-      <header className="node-header">
-        <span className={`status-dot status-${data.status}`} />
-        <strong>{data.title}</strong>
+      <header className="flex items-center gap-2">
+        <span className={`h-2.5 w-2.5 flex-none rounded-full ${statusClassNames[data.status]}`} />
+        <strong className="min-w-0 flex-1 truncate text-sm font-bold text-text-primary">{data.title}</strong>
         {(data.status === "queued" || data.status === "running" || data.status === "cancelled") && (
-          <span className={`node-run-state node-run-state-${data.status}`}>
+          <span className="flex-none rounded-pill bg-control px-2 py-0.5 text-[10px] font-semibold leading-4 text-text-secondary">
             {runStateLabel(data.status)}
           </span>
         )}
       </header>
-      <p>{nodeSummary(data)}</p>
-      <NodeImagePreview path={previewPath} label={`${data.title} 预览`} />
+      <p className="mt-3 line-clamp-2 min-h-9 text-xs leading-[18px] text-text-secondary">{nodeSummary(data)}</p>
+      <NodeImagePreview path={previewPath} label={`${data.title} ${nodeCardCopy.previewSuffix}`} />
       {data.kind === "output" && data.lastOutputPath && (
-        <div className="node-result" title={data.lastOutputPath}>
-          已保存/接收：{data.lastOutputPath}
+        <div className="mt-2 truncate rounded-md bg-success/10 p-2 text-[11px] leading-4 text-success" title={data.lastOutputPath}>
+          {nodeCardCopy.savedPrefix}
+          {data.lastOutputPath}
         </div>
       )}
       {data.kind !== "output" && data.resultPath && !previewPath && (
-        <div className="node-result" title={data.resultPath}>
+        <div className="mt-2 truncate rounded-md bg-success/10 p-2 text-[11px] leading-4 text-success" title={data.resultPath}>
           {data.resultPath}
         </div>
       )}
-      {data.error && <div className="node-error">{data.error}</div>}
+      {data.error && <div className="mt-2 truncate rounded-md bg-danger/10 p-2 text-[11px] leading-4 text-danger">{data.error}</div>}
       {output && (
         <Handle
           id={`${output}-out`}
           type="source"
           position={Position.Right}
-          className={`handle handle-${output}`}
+          className={`workflow-node-handle workflow-node-handle-${output}`}
         />
       )}
     </section>
@@ -91,8 +112,8 @@ export function WorkflowNodeCard({ id, data, selected }: NodeProps<WorkflowNode>
 }
 
 function runStateLabel(status: WorkflowNode["data"]["status"]) {
-  if (status === "queued") return "等待";
-  if (status === "running") return "运行中";
-  if (status === "cancelled") return "已打断";
+  if (status === "queued") return runStateLabels.queued;
+  if (status === "running") return runStateLabels.running;
+  if (status === "cancelled") return runStateLabels.cancelled;
   return status;
 }

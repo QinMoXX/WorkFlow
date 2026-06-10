@@ -84,6 +84,7 @@ export function useWorkflowApp() {
   const [edgeContextMenu, setEdgeContextMenu] = useState<EdgeContextMenu | null>(null);
   const [paneContextMenu, setPaneContextMenu] = useState<PaneContextMenu | null>(null);
   const [nodePickerMenu, setNodePickerMenu] = useState<NodePickerMenu | null>(null);
+  const [isDraggingNode, setIsDraggingNode] = useState(false);
   const [providers, setProviders] = useState<ProviderConfig[]>(defaultProviderConfigs);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<WorkflowNode, WorkflowEdge> | null>(null);
   const [activeRun, setActiveRun] = useState<ActiveRunState | null>(null);
@@ -102,6 +103,12 @@ export function useWorkflowApp() {
     () => nodes.find((node) => node.id === selectedNodeId) ?? null,
     [nodes, selectedNodeId],
   );
+  const nodeSettingsNode = useMemo(() => {
+    if (isDraggingNode) return null;
+    const selectedNodes = nodes.filter((node) => node.selected);
+    if (selectedNodes.length > 1) return null;
+    return selectedNodes[0] ?? selectedNode;
+  }, [isDraggingNode, nodes, selectedNode]);
   const isRunActive = activeRun !== null;
   const canCancelRun = Boolean(activeRun?.runId) && !activeRun?.isCancelling;
   const selectedNodeCanCancelRun = Boolean(
@@ -373,8 +380,12 @@ export function useWorkflowApp() {
         pushHistory();
         isDraggingNodesRef.current = true;
       }
+      if (hasPositionDragStart) setIsDraggingNode(true);
       if (hasStructuralChange) pushHistory();
-      if (hasPositionDragEnd) isDraggingNodesRef.current = false;
+      if (hasPositionDragEnd) {
+        isDraggingNodesRef.current = false;
+        setIsDraggingNode(false);
+      }
 
       onNodesChange(changes);
     },
@@ -392,7 +403,9 @@ export function useWorkflowApp() {
   );
 
   const handleSelectionChange = useCallback(({ nodes: selectedNodes }: { nodes: WorkflowNode[] }) => {
-    setSelectedNodeId(selectedNodes[0]?.id ?? null);
+    if (selectedNodes.length === 0) return;
+
+    setSelectedNodeId(selectedNodes[0].id);
     closeContextMenus();
   }, [closeContextMenus]);
 
@@ -1050,6 +1063,7 @@ export function useWorkflowApp() {
     edges,
     nodeTypes,
     selectedNode,
+    nodeSettingsNode,
     providers,
     toasts,
     isSettingsOpen,

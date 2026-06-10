@@ -67,10 +67,13 @@ export function NodeSettingsPopover({
   return (
     <ViewportPortal>
       <section
-        className="nodrag nopan absolute z-20 w-[800px] max-w-[calc(100vw-420px)] rounded-xl border border-border-default bg-panel-raised/95 p-4 shadow-panel backdrop-blur"
+        className="nodrag nopan pointer-events-auto absolute z-20 w-[800px] max-w-[calc(100vw-420px)] rounded-xl border border-border-default bg-panel-raised/95 p-4 shadow-panel backdrop-blur"
         style={{ left, top }}
         onClick={(event) => event.stopPropagation()}
+        onContextMenu={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
         onMouseDown={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">

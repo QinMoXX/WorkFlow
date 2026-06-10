@@ -71,15 +71,27 @@
     opacity: 0;
   }
 
+  .react-flow__edges {
+    z-index: 2;
+  }
+
   .react-flow__edge-path {
-    stroke: theme("colors.border-strong");
-    stroke-width: 2;
+    stroke: theme("colors.text-secondary") !important;
+    stroke-width: 2.4 !important;
+    opacity: 0.92;
+    filter: drop-shadow(0 0 4px theme("colors.canvas"));
+  }
+
+  .react-flow__edge:hover .react-flow__edge-path {
+    stroke: theme("colors.text-primary") !important;
+    stroke-width: 2.8 !important;
   }
 
   .react-flow__edge.selected .react-flow__edge-path {
-    stroke: theme("colors.accent");
-    stroke-width: 2.5;
-    filter: drop-shadow(0 0 6px rgba(97, 183, 255, 0.42));
+    stroke: theme("colors.accent") !important;
+    stroke-width: 3 !important;
+    opacity: 1;
+    filter: drop-shadow(0 0 6px theme("colors.accent"));
   }
 
   .react-flow__controls {

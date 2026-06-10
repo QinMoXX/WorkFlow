@@ -60,11 +60,11 @@ function App(_props: ReadonlyAppProps) {
           >
             <Background gap={22} size={1} />
             <NodeSettingsPopover
-              node={workflow.selectedNode}
+              node={workflow.nodeSettingsNode}
               providers={workflow.providers}
               onChange={workflow.updateSelectedNode}
               onImportImage={workflow.importImageToSelectedNode}
-              onRun={() => workflow.selectedNode && workflow.runNode(workflow.selectedNode.id)}
+              onRun={() => workflow.nodeSettingsNode && workflow.runNode(workflow.nodeSettingsNode.id)}
               onCancelRun={workflow.cancelActiveRun}
               canRun={!workflow.isRunActive}
               canCancelRun={workflow.selectedNodeCanCancelRun}

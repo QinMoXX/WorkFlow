@@ -21,7 +21,6 @@ import "@xyflow/react/dist/style.css";
 import { AiSettingsPanel } from "./components/AiSettingsPanel";
 import { NodeLibrary } from "./components/NodeLibrary";
 import { PropertyPanel } from "./components/PropertyPanel";
-import { RunLogPanel } from "./components/RunLogPanel";
 import { WorkflowNodeCard } from "./components/WorkflowNodeCard";
 import { createNode, initialEdges, initialNodes } from "./lib/nodeCatalog";
 import { defaultProviderConfigs, firstProviderPreset } from "./lib/providerPresets";
@@ -70,14 +69,18 @@ type ActiveRunState = {
   isCancelling: boolean;
 };
 
+type ToastMessage = {
+  id: number;
+  message: string;
+};
+
 const ACTIVE_NODE_STATUSES = new Set(["queued", "running"]);
 
 function App() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(initialNodes[0].id);
-  const [logs, setLogs] = useState<string[]>(["工作流已就绪"]);
-  const [isLogOpen, setIsLogOpen] = useState(true);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [nodeContextMenu, setNodeContextMenu] = useState<NodeContextMenu | null>(null);
   const [edgeContextMenu, setEdgeContextMenu] = useState<EdgeContextMenu | null>(null);
@@ -92,6 +95,7 @@ function App() {
   const isRestoringHistoryRef = useRef(false);
   const isDraggingNodesRef = useRef(false);
   const clipboardRef = useRef<ClipboardGraph | null>(null);
+  const toastSequenceRef = useRef(0);
 
   const nodeTypes = useMemo(() => ({ workflowNode: WorkflowNodeCard }), []);
   const selectedNode = useMemo(
@@ -108,8 +112,31 @@ function App() {
   );
 
   const appendLogs = useCallback((nextLogs: string[]) => {
-    setLogs((current) => [...nextLogs, ...current].slice(0, 80));
+    const messages = nextLogs.filter((log) => log.trim().length > 0);
+    if (messages.length === 0) return;
+
+    void invoke("debug_frontend_logs", { messages }).catch(() => undefined);
+
+    const nextToasts = messages.map((message) => {
+      toastSequenceRef.current += 1;
+      return { id: toastSequenceRef.current, message };
+    });
+    const toastIds = new Set(nextToasts.map((toast) => toast.id));
+
+    setToasts((current) => [...nextToasts, ...current].slice(0, 6));
+    window.setTimeout(() => {
+      setToasts((current) => current.filter((toast) => !toastIds.has(toast.id)));
+    }, 3800);
   }, []);
+
+  const closeContextMenus = useCallback(() => {
+    setNodeContextMenu(null);
+    setEdgeContextMenu(null);
+  }, []);
+
+  useEffect(() => {
+    appendLogs(["工作流已就绪"]);
+  }, [appendLogs]);
 
   const applySnapshot = useCallback(
     (snapshot: WorkflowSnapshot) => {
@@ -362,6 +389,11 @@ function App() {
     [onEdgesChange, pushHistory],
   );
 
+  const handleSelectionChange = useCallback(({ nodes: selectedNodes }: { nodes: WorkflowNode[] }) => {
+    setSelectedNodeId(selectedNodes[0]?.id ?? null);
+    closeContextMenus();
+  }, [closeContextMenus]);
+
   const handleConnect = useCallback(
     (connection: Connection) => {
       const source = nodes.find((node) => node.id === connection.source);
@@ -566,11 +598,6 @@ function App() {
       y: event.clientY,
     });
   }, []);
-
-  const closeContextMenus = () => {
-    setNodeContextMenu(null);
-    setEdgeContextMenu(null);
-  };
 
   const deleteNode = (nodeId: string) => {
     const node = nodes.find((item) => item.id === nodeId);
@@ -1000,13 +1027,17 @@ function App() {
             onNodeClick={(_, node) => setSelectedNodeId(node.id)}
             onNodeContextMenu={openImageContextMenu}
             onEdgeContextMenu={openEdgeContextMenu}
+            onSelectionChange={handleSelectionChange}
             onPaneClick={() => {
               setSelectedNodeId(null);
               closeContextMenus();
             }}
             selectionOnDrag
+            selectionKeyCode={null}
             selectionMode={SelectionMode.Partial}
             multiSelectionKeyCode={["Control", "Meta", "Shift"]}
+            panOnDrag={false}
+            panActivationKeyCode="Space"
             deleteKeyCode={null}
             fitView
             proOptions={{ hideAttribution: true }}
@@ -1067,7 +1098,15 @@ function App() {
           </div>
         )}
 
-        <RunLogPanel logs={logs} isOpen={isLogOpen} onToggle={() => setIsLogOpen((value) => !value)} />
+        {toasts.length > 0 && (
+          <div className="toast-stack" aria-live="polite" aria-atomic="false">
+            {toasts.map((toast) => (
+              <div className="toast-message" key={toast.id}>
+                {toast.message}
+              </div>
+            ))}
+          </div>
+        )}
         <AiSettingsPanel
           isOpen={isSettingsOpen}
           providers={providers}

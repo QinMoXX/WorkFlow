@@ -2,7 +2,7 @@ mod workflow;
 
 use workflow::commands::{
     cancel_run, copy_image_to_clipboard, import_clipboard_image, import_image_data_url,
-    load_provider_configs, load_workflow, run_node, run_workflow, save_image_as,
+    debug_frontend_logs, load_provider_configs, load_workflow, run_node, run_workflow, save_image_as,
     save_provider_configs, save_workflow, show_in_folder, RunControlState,
 };
 
@@ -15,6 +15,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             save_workflow,
             load_workflow,
+            debug_frontend_logs,
             import_image_data_url,
             import_clipboard_image,
             save_image_as,

@@ -69,6 +69,17 @@ pub fn load_workflow(app: AppHandle) -> Result<Option<WorkflowSnapshot>, String>
 }
 
 #[tauri::command]
+pub fn debug_frontend_logs(messages: Vec<String>) {
+    #[cfg(debug_assertions)]
+    for message in messages {
+        println!("[frontend] {}", message);
+    }
+
+    #[cfg(not(debug_assertions))]
+    let _ = messages;
+}
+
+#[tauri::command]
 pub fn import_image_data_url(
     app: AppHandle,
     data_url: String,

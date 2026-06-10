@@ -37,7 +37,7 @@ button:disabled {
 .app-shell {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr) 320px;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr);
   width: 100vw;
   height: 100vh;
   overflow: hidden;
@@ -88,8 +88,7 @@ button:disabled {
 .primary-action,
 .secondary-action,
 .danger-action,
-.property-form header button,
-.log-panel > button {
+.property-form header button {
   border: 1px solid #cfd6dd;
   border-radius: 8px;
   background: #ffffff;
@@ -590,35 +589,28 @@ button:disabled {
   line-height: 16px;
 }
 
-.log-panel {
-  grid-column: 1 / -1;
-  border-top: 1px solid #cfd6dd;
-  background: #182028;
-  color: #dce4ea;
+.toast-stack {
+  position: fixed;
+  z-index: 40;
+  right: 18px;
+  bottom: 18px;
+  display: grid;
+  width: min(360px, calc(100vw - 36px));
+  gap: 8px;
+  pointer-events: none;
 }
 
-.log-panel > button {
-  width: 100%;
-  padding: 8px 16px;
-  border: 0;
-  border-radius: 0;
-  background: #202a33;
-  color: #ffffff;
-  text-align: left;
-}
-
-.log-list {
-  max-height: 150px;
-  overflow: auto;
-  padding: 8px 16px 14px;
-}
-
-.log-list p {
-  margin: 4px 0;
-  color: #bfccd6;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 12px;
+.toast-message {
+  overflow: hidden;
+  border: 1px solid #cfd6dd;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #ffffff;
+  box-shadow: 0 14px 34px rgba(25, 36, 46, 0.16);
+  color: #1d252c;
+  font-size: 13px;
   line-height: 18px;
+  text-overflow: ellipsis;
 }
 
 @media (max-width: 980px) {

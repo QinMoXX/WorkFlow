@@ -20,9 +20,16 @@ export interface ToolbarAction {
   shortcut?: string;
 }
 
+export interface SidebarTab {
+  id: "canvases" | "assets";
+  label: string;
+}
+
 export const appCopy = {
   brandName: "WorkFlow",
   brandSubtitle: "AI 图片工作流",
+  projectName: "未命名项目",
+  currentCanvasName: "画布 1",
   nodeLibraryTitle: "节点库",
   selectedPanelKicker: "节点属性",
   settingsKicker: "设置",
@@ -33,6 +40,20 @@ export const appCopy = {
   emptyProviderDescription: "新增供应商后配置 URL、API Key 和模型列表。",
   groupTitle: "视觉分组",
   groupDescription: "用于整理和批量移动节点，不参与连线和运行语义。",
+};
+
+export const workspaceSidebarCopy = {
+  canvasTab: "画布",
+  assetsTab: "资产",
+  canvasListTitle: "画布列表",
+  assetsListTitle: "画布资产",
+  allFilter: "全部",
+  emptyCanvasTitle: "暂无画布",
+  emptyCanvasDescription: "未来支持多画布后会在这里显示画布列表。",
+  emptyAssetsTitle: "暂无资产",
+  emptyAssetsDescription: "画布中使用到的图片资产会显示在这里。",
+  nodeCountSuffix: "节点",
+  assetImageFallback: "图片资产",
 };
 
 export const nodeLibraryCopy = {
@@ -65,6 +86,22 @@ export const propertyPanelCopy = {
   cancel: "打断",
   cancelling: "正在打断",
   imagePathPlaceholder: "/path/to/image.png",
+};
+
+export const nodeSettingsPopoverCopy = {
+  modeStyle: "风格",
+  modeMark: "标记",
+  attachedImage: "输入图",
+  runButtonLabel: "运行",
+  sendButtonLabel: "提交",
+  promptPlaceholder: "可直接输入文字指令，或上传图片输入文字指令对图片进行编辑。",
+  providerFallback: "Lib Image",
+  qualityLabel: "自适应 · 标准画质",
+  cameraLabel: "摄像机",
+  sceneLabel: "全景",
+  countLabel: "1张",
+  stepLabel: "22",
+  expandLabel: "展开设置",
 };
 
 export const settingsPanelCopy = {
@@ -121,6 +158,11 @@ export const nodeTemplates: NodeTemplate[] = [
   { kind: "group", title: "分组", description: "整理一组节点" },
 ];
 
+export const workspaceSidebarTabs: SidebarTab[] = [
+  { id: "canvases", label: workspaceSidebarCopy.canvasTab },
+  { id: "assets", label: workspaceSidebarCopy.assetsTab },
+];
+
 export const capabilityLabels: Record<ProviderCapability, string> = {
   textToImage: "文生图",
   imageToImage: "图生图",
@@ -137,6 +179,15 @@ export const imageContextMenuActions: ContextMenuAction[] = [
 export const edgeContextMenuActions: ContextMenuAction[] = [
   { id: "delete-edge", label: "删除连线", danger: true },
 ];
+
+export const paneContextMenuActions: ContextMenuAction[] = [
+  { id: "add-node", label: "添加节点" },
+];
+
+export const nodePickerCopy = {
+  title: "添加节点",
+  description: "选择要添加到画布的节点类型。",
+};
 
 export const canvasToolbarActions: ToolbarAction[] = [
   { id: "fitSelected", label: "定位", shortcut: "F" },

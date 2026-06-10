@@ -1,12 +1,13 @@
-import { Background, Controls, MiniMap, ReactFlow, ReactFlowProvider, SelectionMode } from "@xyflow/react";
+import { Background, MiniMap, ReactFlow, ReactFlowProvider, SelectionMode } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { AiSettingsPanel } from "./components/AiSettingsPanel";
 import { CanvasToolbar } from "./components/CanvasToolbar";
 import { ContextMenu } from "./components/ContextMenu";
-import { NodeLibrary } from "./components/NodeLibrary";
-import { PropertyPanel } from "./components/PropertyPanel";
+import { NodePickerMenu } from "./components/NodePickerMenu";
+import { NodeSettingsPopover } from "./components/NodeSettingsPopover";
 import { ToastStack } from "./components/ToastStack";
-import { edgeContextMenuActions, imageContextMenuActions } from "./data/mockData";
+import { WorkspaceSidebar } from "./components/WorkspaceSidebar";
+import { edgeContextMenuActions, imageContextMenuActions, paneContextMenuActions } from "./data/mockData";
 import { useWorkflowApp } from "./hooks/useWorkflowApp";
 import { WorkflowEdge, WorkflowNode } from "./types/workflow";
 import "./App.css";
@@ -18,17 +19,8 @@ function App(_props: ReadonlyAppProps) {
 
   return (
     <ReactFlowProvider>
-      <main className="grid h-screen w-screen grid-cols-[280px_minmax(0,1fr)_336px] overflow-hidden bg-app text-text-primary max-[1180px]:grid-cols-[240px_minmax(0,1fr)]">
-        <NodeLibrary
-          onAddNode={workflow.handleAddNode}
-          onRunWorkflow={workflow.runWorkflow}
-          onCancelRun={workflow.cancelActiveRun}
-          onSaveWorkflow={workflow.saveWorkflow}
-          onOpenSettings={workflow.openSettings}
-          isRunActive={workflow.isRunActive}
-          canCancelRun={workflow.canCancelRun}
-          isCancellingRun={workflow.isCancellingRun}
-        />
+      <main className="grid h-screen w-screen grid-cols-[344px_minmax(0,1fr)] overflow-hidden bg-app text-text-primary max-[1180px]:grid-cols-[300px_minmax(0,1fr)]">
+        <WorkspaceSidebar nodes={workflow.nodes} />
 
         <section className="workflow-canvas relative min-h-0 min-w-0" onClick={workflow.closeContextMenus}>
           <CanvasToolbar
@@ -50,6 +42,7 @@ function App(_props: ReadonlyAppProps) {
             onNodeClick={(_, node) => workflow.selectNode(node.id)}
             onNodeContextMenu={workflow.openImageContextMenu}
             onEdgeContextMenu={workflow.openEdgeContextMenu}
+            onPaneContextMenu={workflow.openPaneContextMenu}
             onSelectionChange={workflow.handleSelectionChange}
             onPaneClick={() => {
               workflow.selectNode(null);
@@ -66,24 +59,20 @@ function App(_props: ReadonlyAppProps) {
             proOptions={{ hideAttribution: true }}
           >
             <Background gap={22} size={1} />
-            <Controls />
+            <NodeSettingsPopover
+              node={workflow.selectedNode}
+              providers={workflow.providers}
+              onChange={workflow.updateSelectedNode}
+              onImportImage={workflow.importImageToSelectedNode}
+              onRun={() => workflow.selectedNode && workflow.runNode(workflow.selectedNode.id)}
+              onCancelRun={workflow.cancelActiveRun}
+              canRun={!workflow.isRunActive}
+              canCancelRun={workflow.selectedNodeCanCancelRun}
+              isCancellingRun={workflow.isCancellingRun}
+            />
             <MiniMap pannable zoomable />
           </ReactFlow>
         </section>
-
-        <aside className="min-h-0 overflow-auto border-l border-border-subtle bg-panel p-5 max-[1180px]:hidden">
-          <PropertyPanel
-            node={workflow.selectedNode}
-            providers={workflow.providers}
-            onChange={workflow.updateSelectedNode}
-            onImportImage={workflow.importImageToSelectedNode}
-            onRun={() => workflow.selectedNode && workflow.runNode(workflow.selectedNode.id)}
-            onCancelRun={workflow.cancelActiveRun}
-            canRun={!workflow.isRunActive}
-            canCancelRun={workflow.selectedNodeCanCancelRun}
-            isCancellingRun={workflow.isCancellingRun}
-          />
-        </aside>
 
         {workflow.nodeContextMenu && (
           <ContextMenu
@@ -112,6 +101,27 @@ function App(_props: ReadonlyAppProps) {
             onAction={(actionId) => {
               if (actionId === "delete-edge") workflow.deleteContextEdge();
             }}
+          />
+        )}
+
+        {workflow.paneContextMenu && (
+          <ContextMenu
+            actions={paneContextMenuActions}
+            x={workflow.paneContextMenu.x}
+            y={workflow.paneContextMenu.y}
+            hasImage={false}
+            isRunActive={workflow.isRunActive}
+            onAction={(actionId) => {
+              if (actionId === "add-node") workflow.openNodePickerFromPaneMenu();
+            }}
+          />
+        )}
+
+        {workflow.nodePickerMenu && (
+          <NodePickerMenu
+            x={workflow.nodePickerMenu.x}
+            y={workflow.nodePickerMenu.y}
+            onSelectNode={workflow.addNodeFromPicker}
           />
         )}
 

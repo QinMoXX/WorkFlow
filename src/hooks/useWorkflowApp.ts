@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -46,6 +46,15 @@ type EdgeContextMenu = {
   y: number;
 };
 
+type PaneContextMenu = {
+  x: number;
+  y: number;
+  flowX: number;
+  flowY: number;
+};
+
+type NodePickerMenu = PaneContextMenu;
+
 type ClipboardGraph = {
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
@@ -73,6 +82,8 @@ export function useWorkflowApp() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [nodeContextMenu, setNodeContextMenu] = useState<NodeContextMenu | null>(null);
   const [edgeContextMenu, setEdgeContextMenu] = useState<EdgeContextMenu | null>(null);
+  const [paneContextMenu, setPaneContextMenu] = useState<PaneContextMenu | null>(null);
+  const [nodePickerMenu, setNodePickerMenu] = useState<NodePickerMenu | null>(null);
   const [providers, setProviders] = useState<ProviderConfig[]>(defaultProviderConfigs);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<WorkflowNode, WorkflowEdge> | null>(null);
   const [activeRun, setActiveRun] = useState<ActiveRunState | null>(null);
@@ -121,6 +132,8 @@ export function useWorkflowApp() {
   const closeContextMenus = useCallback(() => {
     setNodeContextMenu(null);
     setEdgeContextMenu(null);
+    setPaneContextMenu(null);
+    setNodePickerMenu(null);
   }, []);
 
   useEffect(() => {
@@ -422,9 +435,10 @@ export function useWorkflowApp() {
     [appendLogs, nodes, pushHistory, setEdges],
   );
 
-  const handleAddNode = (kind: WorkflowNodeKind) => {
+  const handleAddNode = (kind: WorkflowNodeKind, position?: { x: number; y: number }) => {
     pushHistory();
     const nextNode = createNode(kind, nodes.length);
+    if (position) nextNode.position = position;
     if (kind === "textToImage") {
       const preset = firstProviderPreset(providers, "textToImage");
       if (preset) nextNode.data = { ...nextNode.data, ...preset };
@@ -435,7 +449,43 @@ export function useWorkflowApp() {
     }
     setNodes((current) => [...current, nextNode]);
     setSelectedNodeId(nextNode.id);
+    setPaneContextMenu(null);
+    setNodePickerMenu(null);
   };
+
+  const openPaneContextMenu = useCallback(
+    (event: ReactMouseEvent | globalThis.MouseEvent) => {
+      event.preventDefault();
+      const position = flowInstance
+        ? flowInstance.screenToFlowPosition({ x: event.clientX, y: event.clientY })
+        : { x: event.clientX, y: event.clientY };
+      setSelectedNodeId(null);
+      setNodeContextMenu(null);
+      setEdgeContextMenu(null);
+      setNodePickerMenu(null);
+      setPaneContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        flowX: position.x,
+        flowY: position.y,
+      });
+    },
+    [flowInstance],
+  );
+
+  const openNodePickerFromPaneMenu = useCallback(() => {
+    if (!paneContextMenu) return;
+    setNodePickerMenu(paneContextMenu);
+    setPaneContextMenu(null);
+  }, [paneContextMenu]);
+
+  const addNodeFromPicker = useCallback(
+    (kind: WorkflowNodeKind) => {
+      const position = nodePickerMenu ? { x: nodePickerMenu.flowX, y: nodePickerMenu.flowY } : undefined;
+      handleAddNode(kind, position);
+    },
+    [handleAddNode, nodePickerMenu],
+  );
 
   const updateSelectedNode = (patch: Partial<WorkflowNodeData>) => {
     if (!selectedNodeId) return;
@@ -562,7 +612,7 @@ export function useWorkflowApp() {
   };
 
   const openImageContextMenu = useCallback(
-    (event: MouseEvent, node: WorkflowNode) => {
+    (event: ReactMouseEvent, node: WorkflowNode) => {
       const imagePath = nodeResultImagePath(node.data);
       event.preventDefault();
       setSelectedNodeId(node.id);
@@ -577,7 +627,7 @@ export function useWorkflowApp() {
     [],
   );
 
-  const openEdgeContextMenu = useCallback((event: MouseEvent, edge: WorkflowEdge) => {
+  const openEdgeContextMenu = useCallback((event: ReactMouseEvent, edge: WorkflowEdge) => {
     event.preventDefault();
     setSelectedNodeId(null);
     setNodeContextMenu(null);
@@ -1005,6 +1055,8 @@ export function useWorkflowApp() {
     isSettingsOpen,
     nodeContextMenu,
     edgeContextMenu,
+    paneContextMenu,
+    nodePickerMenu,
     isRunActive,
     canCancelRun,
     selectedNodeCanCancelRun,
@@ -1025,6 +1077,9 @@ export function useWorkflowApp() {
     saveProviderConfigs,
     openImageContextMenu,
     openEdgeContextMenu,
+    openPaneContextMenu,
+    openNodePickerFromPaneMenu,
+    addNodeFromPicker,
     saveContextImage,
     copyContextImage,
     showContextImageInFolder,

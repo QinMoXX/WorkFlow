@@ -1,4 +1,4 @@
-import { Copy, FolderOpen, ImageDown, Play, Trash2 } from "lucide-react";
+import { Copy, FolderOpen, ImageDown, Play, Plus, Trash2 } from "lucide-react";
 import { ContextMenuAction } from "../data/mockData";
 
 export interface ReadonlyContextMenuProps {
@@ -17,6 +17,7 @@ const icons: Record<string, typeof ImageDown> = {
   rerun: Play,
   delete: Trash2,
   "delete-edge": Trash2,
+  "add-node": Plus,
 };
 
 export function ContextMenu({

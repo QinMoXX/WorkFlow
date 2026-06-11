@@ -7,6 +7,7 @@ import {
   EdgeChange,
   NodeChange,
   ReactFlowInstance,
+  Viewport,
   addEdge,
   useEdgesState,
   useNodesState,
@@ -72,12 +73,58 @@ type ToastMessage = {
   message: string;
 };
 
+type SidebarTabId = "canvases" | "assets";
+
+type WorkspaceUiState = {
+  viewport?: Viewport;
+  sidebarTab?: SidebarTabId;
+};
+
 const ACTIVE_NODE_STATUSES = new Set(["queued", "running"]);
+const WORKSPACE_UI_STATE_KEY = "workflow.workspace.ui-state";
+
+function readWorkspaceUiState(): WorkspaceUiState {
+  try {
+    const raw = window.localStorage.getItem(WORKSPACE_UI_STATE_KEY);
+    if (!raw) return {};
+    const value = JSON.parse(raw) as WorkspaceUiState;
+    return {
+      viewport: isValidViewport(value.viewport) ? value.viewport : undefined,
+      sidebarTab: value.sidebarTab === "assets" || value.sidebarTab === "canvases" ? value.sidebarTab : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function writeWorkspaceUiState(state: WorkspaceUiState) {
+  window.localStorage.setItem(WORKSPACE_UI_STATE_KEY, JSON.stringify(state));
+}
+
+function isValidViewport(value: unknown): value is Viewport {
+  if (!value || typeof value !== "object") return false;
+  const viewport = value as Partial<Viewport>;
+  return (
+    typeof viewport.x === "number" &&
+    Number.isFinite(viewport.x) &&
+    typeof viewport.y === "number" &&
+    Number.isFinite(viewport.y) &&
+    typeof viewport.zoom === "number" &&
+    Number.isFinite(viewport.zoom) &&
+    viewport.zoom > 0
+  );
+}
 
 export function useWorkflowApp() {
+  const initialUiStateRef = useRef<WorkspaceUiState | null>(null);
+  if (!initialUiStateRef.current) initialUiStateRef.current = readWorkspaceUiState();
+
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(initialNodes[0].id);
+  const [sidebarTab, setSidebarTab] = useState<SidebarTabId>(
+    initialUiStateRef.current.sidebarTab ?? "canvases",
+  );
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [nodeContextMenu, setNodeContextMenu] = useState<NodeContextMenu | null>(null);
@@ -97,6 +144,7 @@ export function useWorkflowApp() {
   const isDraggingNodesRef = useRef(false);
   const clipboardRef = useRef<ClipboardGraph | null>(null);
   const toastSequenceRef = useRef(0);
+  const latestViewportRef = useRef<Viewport | undefined>(initialUiStateRef.current.viewport);
 
   const nodeTypes = useMemo(() => ({ workflowNode: WorkflowNodeCard }), []);
   const selectedNode = useMemo(
@@ -146,6 +194,46 @@ export function useWorkflowApp() {
   useEffect(() => {
     appendLogs(["工作流已就绪"]);
   }, [appendLogs]);
+
+  const persistWorkspaceUiState = useCallback((patch: WorkspaceUiState) => {
+    const nextState = {
+      ...readWorkspaceUiState(),
+      ...patch,
+    };
+    writeWorkspaceUiState(nextState);
+  }, []);
+
+  const handleFlowInit = useCallback(
+    (instance: ReactFlowInstance<WorkflowNode, WorkflowEdge>) => {
+      setFlowInstance(instance);
+      if (latestViewportRef.current) {
+        window.requestAnimationFrame(() => {
+          void instance.setViewport(latestViewportRef.current as Viewport);
+        });
+      } else {
+        window.requestAnimationFrame(() => {
+          void instance.fitView({ padding: 0.18 });
+        });
+      }
+    },
+    [],
+  );
+
+  const handleViewportChange = useCallback(
+    (viewport: Viewport) => {
+      latestViewportRef.current = viewport;
+      persistWorkspaceUiState({ viewport });
+    },
+    [persistWorkspaceUiState],
+  );
+
+  const handleSidebarTabChange = useCallback(
+    (nextTab: SidebarTabId) => {
+      setSidebarTab(nextTab);
+      persistWorkspaceUiState({ sidebarTab: nextTab });
+    },
+    [persistWorkspaceUiState],
+  );
 
   const applySnapshot = useCallback(
     (snapshot: WorkflowSnapshot) => {
@@ -1065,6 +1153,7 @@ export function useWorkflowApp() {
     selectedNode,
     nodeSettingsNode,
     providers,
+    sidebarTab,
     toasts,
     isSettingsOpen,
     nodeContextMenu,
@@ -1079,7 +1168,8 @@ export function useWorkflowApp() {
     handleEdgesChange,
     handleConnect,
     isValidConnection,
-    setFlowInstance,
+    handleFlowInit,
+    handleViewportChange,
     handleSelectionChange,
     closeContextMenus,
     handleAddNode,
@@ -1107,6 +1197,8 @@ export function useWorkflowApp() {
     fitSelected,
     fitAll,
     autoLayout,
+    setSidebarTab: handleSidebarTabChange,
+    hasSavedViewport: Boolean(initialUiStateRef.current.viewport),
   };
 }
 

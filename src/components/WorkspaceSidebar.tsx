@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { ChevronDown, FileText, ImageIcon, LayoutGrid, Library, Search } from "lucide-react";
 import { appCopy, workspaceSidebarCopy, workspaceSidebarTabs } from "../data/mockData";
@@ -13,7 +13,11 @@ export interface SidebarAsset {
 
 export interface ReadonlyWorkspaceSidebarProps {
   readonly nodes: WorkflowNode[];
+  readonly activeTab: SidebarTabId;
+  readonly onActiveTabChange: (tabId: SidebarTabId) => void;
 }
+
+type SidebarTabId = (typeof workspaceSidebarTabs)[number]["id"];
 
 function toImageSource(path: string) {
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
@@ -35,8 +39,7 @@ function collectAssets(nodes: WorkflowNode[]): SidebarAsset[] {
   });
 }
 
-export function WorkspaceSidebar({ nodes }: ReadonlyWorkspaceSidebarProps) {
-  const [activeTab, setActiveTab] = useState<(typeof workspaceSidebarTabs)[number]["id"]>("canvases");
+export function WorkspaceSidebar({ nodes, activeTab, onActiveTabChange }: ReadonlyWorkspaceSidebarProps) {
   const assets = useMemo(() => collectAssets(nodes), [nodes]);
 
   return (
@@ -68,7 +71,7 @@ export function WorkspaceSidebar({ nodes }: ReadonlyWorkspaceSidebarProps) {
                   ? "bg-control-hover text-text-primary"
                   : "text-text-secondary hover:bg-control hover:text-text-primary",
               ].join(" ")}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => onActiveTabChange(tab.id)}
             >
               {tab.label}
             </button>

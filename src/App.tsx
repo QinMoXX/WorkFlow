@@ -20,7 +20,11 @@ function App(_props: ReadonlyAppProps) {
   return (
     <ReactFlowProvider>
       <main className="grid h-screen w-screen grid-cols-[344px_minmax(0,1fr)] overflow-hidden bg-app text-text-primary max-[1180px]:grid-cols-[300px_minmax(0,1fr)]">
-        <WorkspaceSidebar nodes={workflow.nodes} />
+        <WorkspaceSidebar
+          nodes={workflow.nodes}
+          activeTab={workflow.sidebarTab}
+          onActiveTabChange={workflow.setSidebarTab}
+        />
 
         <section className="workflow-canvas relative min-h-0 min-w-0" onClick={workflow.closeContextMenus}>
           <CanvasToolbar
@@ -38,7 +42,8 @@ function App(_props: ReadonlyAppProps) {
             onEdgesChange={workflow.handleEdgesChange}
             onConnect={workflow.handleConnect}
             isValidConnection={workflow.isValidConnection}
-            onInit={workflow.setFlowInstance}
+            onInit={workflow.handleFlowInit}
+            onViewportChange={workflow.handleViewportChange}
             onNodeClick={(_, node) => workflow.selectNode(node.id)}
             onNodeContextMenu={workflow.openImageContextMenu}
             onEdgeContextMenu={workflow.openEdgeContextMenu}
@@ -55,7 +60,7 @@ function App(_props: ReadonlyAppProps) {
             panOnDrag={false}
             panActivationKeyCode="Space"
             deleteKeyCode={null}
-            fitView
+            fitView={!workflow.hasSavedViewport}
             proOptions={{ hideAttribution: true }}
           >
             <Background gap={22} size={1} />

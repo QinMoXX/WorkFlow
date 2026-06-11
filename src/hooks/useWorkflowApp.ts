@@ -79,6 +79,7 @@ type WorkspaceUiState = {
 
 const ACTIVE_NODE_STATUSES = new Set(["queued", "running"]);
 const WORKSPACE_UI_STATE_KEY = "workflow.workspace.ui-state";
+const NODE_SETTINGS_POPOVER_DELAY_MS = 240;
 
 function readWorkspaceUiState(): WorkspaceUiState {
   try {
@@ -131,6 +132,7 @@ export function useWorkflowApp() {
   const [paneContextMenu, setPaneContextMenu] = useState<PaneContextMenu | null>(null);
   const [nodePickerMenu, setNodePickerMenu] = useState<NodePickerMenu | null>(null);
   const [isDraggingNode, setIsDraggingNode] = useState(false);
+  const [nodeSettingsNodeId, setNodeSettingsNodeId] = useState<string | null>(null);
   const [providers, setProviders] = useState<ProviderConfig[]>(defaultProviderConfigs);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<WorkflowNode, WorkflowEdge> | null>(null);
   const [activeRun, setActiveRun] = useState<ActiveRunState | null>(null);
@@ -141,6 +143,7 @@ export function useWorkflowApp() {
   const historyFutureRef = useRef<WorkflowSnapshot[]>([]);
   const isRestoringHistoryRef = useRef(false);
   const isDraggingNodesRef = useRef(false);
+  const nodeSettingsDelayRef = useRef<number | null>(null);
   const clipboardRef = useRef<ClipboardGraph | null>(null);
   const toastSequenceRef = useRef(0);
   const latestViewportRef = useRef<Viewport | undefined>(initialUiStateRef.current.viewport);
@@ -150,12 +153,17 @@ export function useWorkflowApp() {
     () => nodes.find((node) => node.id === selectedNodeId) ?? null,
     [nodes, selectedNodeId],
   );
-  const nodeSettingsNode = useMemo(() => {
+  const nodeSettingsCandidateId = useMemo(() => {
     if (isDraggingNode) return null;
+    if (nodeContextMenu || edgeContextMenu || paneContextMenu || nodePickerMenu) return null;
     const selectedNodes = nodes.filter((node) => node.selected);
     if (selectedNodes.length > 1) return null;
-    return selectedNodes[0] ?? selectedNode;
-  }, [isDraggingNode, nodes, selectedNode]);
+    return selectedNodes[0]?.id ?? selectedNode?.id ?? null;
+  }, [edgeContextMenu, isDraggingNode, nodeContextMenu, nodePickerMenu, nodes, paneContextMenu, selectedNode]);
+  const nodeSettingsNode = useMemo(
+    () => nodes.find((node) => node.id === nodeSettingsNodeId) ?? null,
+    [nodeSettingsNodeId, nodes],
+  );
   const isRunActive = activeRun !== null;
   const canCancelRun = Boolean(activeRun?.runId) && !activeRun?.isCancelling;
   const selectedNodeCanCancelRun = Boolean(
@@ -189,6 +197,30 @@ export function useWorkflowApp() {
     setPaneContextMenu(null);
     setNodePickerMenu(null);
   }, []);
+
+  useEffect(() => {
+    if (nodeSettingsDelayRef.current !== null) {
+      window.clearTimeout(nodeSettingsDelayRef.current);
+      nodeSettingsDelayRef.current = null;
+    }
+
+    if (!nodeSettingsCandidateId) {
+      setNodeSettingsNodeId(null);
+      return undefined;
+    }
+
+    nodeSettingsDelayRef.current = window.setTimeout(() => {
+      setNodeSettingsNodeId(nodeSettingsCandidateId);
+      nodeSettingsDelayRef.current = null;
+    }, NODE_SETTINGS_POPOVER_DELAY_MS);
+
+    return () => {
+      if (nodeSettingsDelayRef.current !== null) {
+        window.clearTimeout(nodeSettingsDelayRef.current);
+        nodeSettingsDelayRef.current = null;
+      }
+    };
+  }, [nodeSettingsCandidateId]);
 
   useEffect(() => {
     appendLogs(["工作流已就绪"]);
@@ -482,8 +514,7 @@ export function useWorkflowApp() {
     if (selectedNodes.length === 0) return;
 
     setSelectedNodeId(selectedNodes[0].id);
-    closeContextMenus();
-  }, [closeContextMenus]);
+  }, []);
 
   const handleConnect = useCallback(
     (connection: Connection) => {

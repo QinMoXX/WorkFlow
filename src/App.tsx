@@ -20,11 +20,7 @@ function App(_props: ReadonlyAppProps) {
   return (
     <ReactFlowProvider>
       <main className="grid h-screen w-screen grid-cols-[344px_minmax(0,1fr)] overflow-hidden bg-app text-text-primary max-[1180px]:grid-cols-[300px_minmax(0,1fr)]">
-        <WorkspaceSidebar
-          nodes={workflow.nodes}
-          activeTab={workflow.sidebarTab}
-          onActiveTabChange={workflow.setSidebarTab}
-        />
+        <WorkspaceSidebar nodes={workflow.nodes} />
 
         <section className="workflow-canvas relative min-h-0 min-w-0" onClick={workflow.closeContextMenus}>
           <CanvasToolbar

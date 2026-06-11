@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { ChevronDown, FileText, ImageIcon, LayoutGrid, Library, Search } from "lucide-react";
 import { appCopy, workspaceSidebarCopy, workspaceSidebarTabs } from "../data/mockData";
@@ -13,8 +13,6 @@ export interface SidebarAsset {
 
 export interface ReadonlyWorkspaceSidebarProps {
   readonly nodes: WorkflowNode[];
-  readonly activeTab: SidebarTabId;
-  readonly onActiveTabChange: (tabId: SidebarTabId) => void;
 }
 
 type SidebarTabId = (typeof workspaceSidebarTabs)[number]["id"];
@@ -39,7 +37,8 @@ function collectAssets(nodes: WorkflowNode[]): SidebarAsset[] {
   });
 }
 
-export function WorkspaceSidebar({ nodes, activeTab, onActiveTabChange }: ReadonlyWorkspaceSidebarProps) {
+export function WorkspaceSidebar({ nodes }: ReadonlyWorkspaceSidebarProps) {
+  const [activeTab, setActiveTab] = useState<SidebarTabId>("canvases");
   const assets = useMemo(() => collectAssets(nodes), [nodes]);
 
   return (
@@ -71,7 +70,7 @@ export function WorkspaceSidebar({ nodes, activeTab, onActiveTabChange }: Readon
                   ? "bg-control-hover text-text-primary"
                   : "text-text-secondary hover:bg-control hover:text-text-primary",
               ].join(" ")}
-              onClick={() => onActiveTabChange(tab.id)}
+              onClick={() => setActiveTab(tab.id)}
             >
               {tab.label}
             </button>

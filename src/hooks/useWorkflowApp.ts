@@ -73,11 +73,8 @@ type ToastMessage = {
   message: string;
 };
 
-type SidebarTabId = "canvases" | "assets";
-
 type WorkspaceUiState = {
   viewport?: Viewport;
-  sidebarTab?: SidebarTabId;
 };
 
 const ACTIVE_NODE_STATUSES = new Set(["queued", "running"]);
@@ -88,10 +85,15 @@ function readWorkspaceUiState(): WorkspaceUiState {
     const raw = window.localStorage.getItem(WORKSPACE_UI_STATE_KEY);
     if (!raw) return {};
     const value = JSON.parse(raw) as WorkspaceUiState;
-    return {
+    const state = {
       viewport: isValidViewport(value.viewport) ? value.viewport : undefined,
-      sidebarTab: value.sidebarTab === "assets" || value.sidebarTab === "canvases" ? value.sidebarTab : undefined,
     };
+    if (state.viewport) {
+      window.localStorage.setItem(WORKSPACE_UI_STATE_KEY, JSON.stringify(state));
+    } else {
+      window.localStorage.removeItem(WORKSPACE_UI_STATE_KEY);
+    }
+    return state;
   } catch {
     return {};
   }
@@ -121,10 +123,7 @@ export function useWorkflowApp() {
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(initialNodes[0].id);
-  const [sidebarTab, setSidebarTab] = useState<SidebarTabId>(
-    initialUiStateRef.current.sidebarTab ?? "canvases",
-  );
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [nodeContextMenu, setNodeContextMenu] = useState<NodeContextMenu | null>(null);
@@ -227,23 +226,12 @@ export function useWorkflowApp() {
     [persistWorkspaceUiState],
   );
 
-  const handleSidebarTabChange = useCallback(
-    (nextTab: SidebarTabId) => {
-      setSidebarTab(nextTab);
-      persistWorkspaceUiState({ sidebarTab: nextTab });
-    },
-    [persistWorkspaceUiState],
-  );
-
   const applySnapshot = useCallback(
     (snapshot: WorkflowSnapshot) => {
       const next = fromSnapshot(snapshot);
       setNodes(next.nodes);
       setEdges(next.edges);
-      setSelectedNodeId((current) => {
-        if (current && next.nodes.some((node) => node.id === current)) return current;
-        return next.nodes[0]?.id ?? null;
-      });
+      setSelectedNodeId(null);
     },
     [setEdges, setNodes],
   );
@@ -1153,7 +1141,6 @@ export function useWorkflowApp() {
     selectedNode,
     nodeSettingsNode,
     providers,
-    sidebarTab,
     toasts,
     isSettingsOpen,
     nodeContextMenu,
@@ -1197,7 +1184,6 @@ export function useWorkflowApp() {
     fitSelected,
     fitAll,
     autoLayout,
-    setSidebarTab: handleSidebarTabChange,
     hasSavedViewport: Boolean(initialUiStateRef.current.viewport),
   };
 }

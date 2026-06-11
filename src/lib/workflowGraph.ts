@@ -107,6 +107,28 @@ export function findConnectionRule(
   );
 }
 
+export function resolveConnectionRule(
+  sourceKind: WorkflowNodeKind,
+  sourceHandle: string | null | undefined,
+  targetKind: WorkflowNodeKind,
+  targetHandle: string | null | undefined,
+): WorkflowConnectionRule | null {
+  const exactRule = findConnectionRule(sourceKind, sourceHandle, targetKind, targetHandle);
+  if (exactRule) return exactRule;
+
+  const sourceDataType = outputType(sourceKind);
+  if (!sourceDataType) return null;
+
+  return (
+    connectionRules.find(
+      (rule) =>
+        rule.sourceKind === sourceKind &&
+        rule.targetKind === targetKind &&
+        rule.dataType === sourceDataType,
+    ) ?? null
+  );
+}
+
 export function nodeSummary(data: WorkflowNodeData) {
   if (data.kind === "textInput") return data.content || "输入 prompt 文本";
   if (data.kind === "imageInput") return data.imagePath || "选择或粘贴图片路径";

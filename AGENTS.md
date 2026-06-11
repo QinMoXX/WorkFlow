@@ -19,6 +19,8 @@ This repository is a Tauri 2 desktop app with a React 19 and Vite frontend.
 - `npm run tauri build`: build the distributable Tauri application.
 - `cd src-tauri && cargo check`: type-check the Rust side without producing a release bundle.
 
+Whenever you need to debug and inspect the frontend web interface, please visit http://localhost:1420/. Do not attempt to start the project yourself; if the address is inaccessible, you may prompt me to start the entire program before trying to access it again.
+
 ## Coding Style & Naming Conventions
 
 Use TypeScript, React function components, and ES modules in the frontend. Follow the existing style: two-space indentation, double quotes, semicolons, and PascalCase component names such as `App`. Keep component-specific styles in nearby CSS files like `src/App.css`.

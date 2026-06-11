@@ -54,17 +54,22 @@
   }
 
   .workflow-node-handle {
-    width: 11px;
-    height: 11px;
+    width: 13px;
+    height: 13px;
+    top: 50%;
     border: 2px solid theme("colors.text-primary");
-  }
-
-  .workflow-node-handle-text {
-    background: theme("colors.warning");
-  }
-
-  .workflow-node-handle-image {
     background: theme("colors.accent");
+    box-shadow:
+      0 0 0 2px theme("colors.panel"),
+      0 0 12px rgba(93, 173, 226, 0.36);
+  }
+
+  .workflow-node-handle-input {
+    left: -6px;
+  }
+
+  .workflow-node-handle-output {
+    right: -6px;
   }
 
   .react-flow__background {

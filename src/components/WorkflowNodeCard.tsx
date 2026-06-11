@@ -21,6 +21,7 @@ export function WorkflowNodeCard({ id, data, selected }: ReadonlyWorkflowNodeCar
   const isGroup = data.kind === "group";
   const hasPromptInput = data.kind === "textToImage" || data.kind === "imageToImage";
   const hasImageInput = data.kind === "imageToImage" || data.kind === "output";
+  const hasInput = hasPromptInput || hasImageInput;
   const output = outputType(data.kind);
   const previewPath =
     data.kind === "imageInput"
@@ -58,23 +59,25 @@ export function WorkflowNodeCard({ id, data, selected }: ReadonlyWorkflowNodeCar
       ].join(" ")}
       onContextMenu={handleContextMenu}
     >
-      {hasPromptInput && (
-        <Handle
-          id="prompt-in"
-          type="target"
-          position={Position.Left}
-          className="workflow-node-handle workflow-node-handle-text"
-          style={{ top: hasImageInput ? 34 : 46 }}
-        />
-      )}
-      {hasImageInput && (
-        <Handle
-          id="image-in"
-          type="target"
-          position={Position.Left}
-          className="workflow-node-handle workflow-node-handle-image"
-          style={{ top: hasPromptInput ? 72 : 46 }}
-        />
+      {hasInput && (
+        <>
+          {hasPromptInput && (
+            <Handle
+              id="prompt-in"
+              type="target"
+              position={Position.Left}
+              className="workflow-node-handle workflow-node-handle-input"
+            />
+          )}
+          {hasImageInput && (
+            <Handle
+              id="image-in"
+              type="target"
+              position={Position.Left}
+              className="workflow-node-handle workflow-node-handle-input"
+            />
+          )}
+        </>
       )}
       <header className="flex items-center gap-2">
         <span className={`h-2.5 w-2.5 flex-none rounded-full ${statusClassNames[data.status]}`} />
@@ -104,7 +107,7 @@ export function WorkflowNodeCard({ id, data, selected }: ReadonlyWorkflowNodeCar
           id={`${output}-out`}
           type="source"
           position={Position.Right}
-          className={`workflow-node-handle workflow-node-handle-${output}`}
+          className="workflow-node-handle workflow-node-handle-output"
         />
       )}
     </section>

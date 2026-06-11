@@ -15,7 +15,7 @@ import {
 import { WorkflowNodeCard } from "../components/WorkflowNodeCard";
 import { createNode, initialEdges, initialNodes } from "../lib/nodeCatalog";
 import { defaultProviderConfigs, firstProviderPreset } from "../lib/providerPresets";
-import { findConnectionRule, fromSnapshot, toPersistableSnapshot, toSnapshot } from "../lib/workflowGraph";
+import { fromSnapshot, resolveConnectionRule, toPersistableSnapshot, toSnapshot } from "../lib/workflowGraph";
 import { ProviderConfig } from "../types/provider";
 import {
   RunResponse,
@@ -527,7 +527,7 @@ export function useWorkflowApp() {
 
       const rule =
         source && target
-          ? findConnectionRule(
+          ? resolveConnectionRule(
               source.data.kind,
               connection.sourceHandle,
               target.data.kind,
@@ -545,7 +545,9 @@ export function useWorkflowApp() {
         addEdge(
           {
             ...connection,
-            id: `${connection.source}-${connection.sourceHandle}-${connection.target}-${connection.targetHandle}`,
+            sourceHandle: rule.sourceHandle,
+            targetHandle: rule.targetHandle,
+            id: `${connection.source}-${rule.sourceHandle}-${connection.target}-${rule.targetHandle}`,
             data: { dataType: rule.dataType },
           },
           current,
@@ -1154,7 +1156,7 @@ export function useWorkflowApp() {
       const target = nodes.find((node) => node.id === connection.target);
       if (!source || !target) return false;
       return Boolean(
-        findConnectionRule(
+        resolveConnectionRule(
           source.data.kind,
           connection.sourceHandle ?? null,
           target.data.kind,

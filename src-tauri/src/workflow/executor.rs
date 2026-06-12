@@ -50,7 +50,7 @@ pub fn run_nodes(
         RunStartedEvent {
             run_id: run_id.clone(),
             mode: mode.to_string(),
-            target_node_id,
+            target_node_id: target_node_id.clone(),
             node_ids: execution_order.clone(),
             started_at: started_at.clone(),
         },
@@ -125,6 +125,43 @@ pub fn run_nodes(
                     false,
                 )),
                 None,
+            );
+            continue;
+        }
+
+        if target_node_id.is_some()
+            && target_node_id.as_deref() != Some(node_id.as_str())
+            && reusable_node_output(snapshot, index).is_some()
+        {
+            snapshot.nodes[index].data.status = "success".to_string();
+            snapshot.nodes[index].data.error = None;
+            logs.push(format!("{} 复用已有结果", snapshot.nodes[index].data.title));
+            emit_log(
+                app,
+                &run_id,
+                &mut sequence,
+                "info",
+                &logs[logs.len() - 1],
+                Some(node_id),
+            );
+            sequence += 1;
+            emit_node(
+                app,
+                &run_id,
+                &mut sequence,
+                snapshot,
+                index,
+                node_output(snapshot, index),
+                None,
+                Some(node_metrics(
+                    snapshot,
+                    index,
+                    providers,
+                    None,
+                    None,
+                    Some(timestamp()),
+                    Some(0),
+                )),
             );
             continue;
         }
@@ -784,6 +821,52 @@ fn node_output(snapshot: &WorkflowSnapshot, node_index: usize) -> Option<RunNode
             .clone()
             .map(|value| value.chars().take(80).collect()),
     })
+}
+
+fn reusable_node_output(snapshot: &WorkflowSnapshot, node_index: usize) -> Option<String> {
+    let node = &snapshot.nodes[node_index];
+
+    match node.kind {
+        WorkflowNodeKind::TextInput => node
+            .data
+            .content
+            .as_deref()
+            .filter(|content| !content.trim().is_empty())
+            .map(|content| content.to_string()),
+        WorkflowNodeKind::ImageInput => node
+            .data
+            .result_path
+            .as_deref()
+            .or(node.data.image_path.as_deref())
+            .filter(|image| reusable_image_source(image))
+            .map(|image| image.to_string()),
+        WorkflowNodeKind::TextToImage | WorkflowNodeKind::ImageToImage => node
+            .data
+            .result_url
+            .as_deref()
+            .or(node.data.result_path.as_deref())
+            .filter(|image| reusable_image_source(image))
+            .map(|image| image.to_string()),
+        WorkflowNodeKind::Output => node
+            .data
+            .last_output_path
+            .as_deref()
+            .filter(|image| reusable_image_source(image))
+            .map(|image| image.to_string()),
+        WorkflowNodeKind::Group => Some("group".to_string()),
+    }
+}
+
+fn reusable_image_source(image: &str) -> bool {
+    let image = image.trim();
+    if image.is_empty() {
+        return false;
+    }
+    if is_remote_url(image) || image.starts_with("data:image/") {
+        return true;
+    }
+
+    Path::new(image).is_file()
 }
 
 fn node_metrics(

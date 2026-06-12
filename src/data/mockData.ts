@@ -1,5 +1,4 @@
 import { WorkflowNodeKind } from "../types/workflow";
-import { ProviderCapability } from "../types/provider";
 
 export interface NodeTemplate {
   kind: WorkflowNodeKind;
@@ -26,20 +25,10 @@ export interface SidebarTab {
 }
 
 export const appCopy = {
-  brandName: "WorkFlow",
-  brandSubtitle: "AI 图片工作流",
   projectName: "未命名项目",
   currentCanvasName: "画布 1",
-  nodeLibraryTitle: "节点库",
-  selectedPanelKicker: "节点属性",
   settingsKicker: "设置",
   settingsTitle: "AI 配置",
-  emptySelectionTitle: "未选择节点",
-  emptySelectionDescription: "选择画布上的节点后编辑参数。",
-  emptyProviderTitle: "暂无 API Key",
-  emptyProviderDescription: "配置 New API Key 后即可运行 AI 节点。",
-  groupTitle: "视觉分组",
-  groupDescription: "用于整理和批量移动节点，不参与连线和运行语义。",
 };
 
 export const workspaceSidebarCopy = {
@@ -56,47 +45,25 @@ export const workspaceSidebarCopy = {
   assetImageFallback: "图片资产",
 };
 
-export const nodeLibraryCopy = {
-  runAllIdle: "运行全部",
-  runAllActive: "运行全部...",
-  cancelling: "正在打断",
-  cancelRun: "打断运行",
-  saveWorkflow: "保存工作流",
-  aiSettings: "AI 配置",
-};
-
 export const propertyPanelCopy = {
   name: "名称",
-  textContent: "文本内容",
   chooseImage: "选择图片",
   imagePath: "图片路径",
-  provider: "API",
-  providerPlaceholder: "New API",
   model: "模型",
-  modelPlaceholder: "选择模型",
-  promptOverride: "Prompt 覆盖",
-  aspectRatio: "画幅",
-  style: "风格",
-  seed: "Seed",
-  negativePrompt: "负向 Prompt",
-  strength: "修改强度",
   saveDirectory: "保存目录",
-  run: "运行",
-  running: "运行中",
   cancel: "打断",
   cancelling: "正在打断",
   imagePathPlaceholder: "/path/to/image.png",
+  strength: "修改强度",
+  run: "运行",
+  running: "运行中",
 };
 
 export const nodeSettingsPopoverCopy = {
   modeStyle: "风格",
   modeMark: "标记",
-  attachedImage: "输入图",
-  runButtonLabel: "运行",
   sendButtonLabel: "提交",
   promptPlaceholder: "可直接输入文字指令，或上传图片输入文字指令对图片进行编辑。",
-  providerFallback: "Lib Image",
-  qualityLabel: "自适应 · 标准画质",
   cameraLabel: "摄像机",
   sceneLabel: "全景",
   countLabel: "1张",
@@ -106,37 +73,15 @@ export const nodeSettingsPopoverCopy = {
 
 export const settingsPanelCopy = {
   close: "关闭",
-  addProvider: "新增供应商",
-  unnamedProvider: "未命名供应商",
-  delete: "删除",
-  provider: "供应商",
-  providerId: "供应商 ID",
-  name: "名称",
-  providerUrl: "New API 地址",
-  providerUrlPlaceholder: "https://api.example.com/v1",
+  providerUrl: "API 地址",
   apiKey: "API Key",
   apiKeyPlaceholder: "sk-...",
-  proxyUrl: "代理地址",
-  proxyUrlPlaceholder: "http://127.0.0.1:7890",
-  modelList: "模型列表",
-  addModel: "新增模型",
-  modelId: "模型 ID",
-  displayName: "显示名称",
-  capability: "能力",
   cancel: "取消",
   save: "保存配置",
-  modelCountSuffix: "个模型",
-  newProviderName: "新供应商",
 };
 
 export const settingsValidationCopy = {
-  emptyProviderId: "供应商 ID 不能为空",
-  duplicateProviderId: "供应商 ID 重复：",
-  unnamedProviderFallback: "(未命名)",
-  emptyProviderName: "名称不能为空",
   emptyApiKey: "API Key 不能为空",
-  emptyModelId: "存在空模型 ID",
-  duplicateModel: "模型重复：",
 };
 
 export const runStateLabels = {
@@ -164,11 +109,6 @@ export const workspaceSidebarTabs: SidebarTab[] = [
   { id: "assets", label: workspaceSidebarCopy.assetsTab },
 ];
 
-export const capabilityLabels: Record<ProviderCapability, string> = {
-  textToImage: "文生图",
-  imageToImage: "图生图",
-};
-
 export const imageContextMenuActions: ContextMenuAction[] = [
   { id: "save", label: "保存图片", requiresImage: true },
   { id: "copy", label: "复制图片", requiresImage: true },
@@ -195,7 +135,7 @@ export const canvasToolbarActions: ToolbarAction[] = [
   { id: "fitAll", label: "全景" },
   { id: "autoLayout", label: "自动布局", shortcut: "L" },
   { id: "save", label: "保存", shortcut: "Ctrl S" },
-  { id: "settings", label: "AI 配置" },
+  { id: "settings", label: "API Key" },
 ];
 
 export const aspectRatioOptions = ["1:1", "4:3", "3:4", "16:9", "9:16"];

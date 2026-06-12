@@ -24,7 +24,7 @@ use super::{
 
 pub fn run_nodes(
     app: &AppHandle,
-    providers: &[ProviderConfig],
+    provider: &ProviderConfig,
     snapshot: &mut WorkflowSnapshot,
     execution_order: Vec<String>,
     mode: &str,
@@ -156,7 +156,7 @@ pub fn run_nodes(
                 Some(node_metrics(
                     snapshot,
                     index,
-                    providers,
+                    provider,
                     None,
                     None,
                     Some(timestamp()),
@@ -182,7 +182,7 @@ pub fn run_nodes(
             Some(node_metrics(
                 snapshot,
                 index,
-                providers,
+                provider,
                 None,
                 Some(node_started_at.clone()),
                 None,
@@ -190,7 +190,7 @@ pub fn run_nodes(
             )),
         );
 
-        match execute_node(snapshot, index, &generated_dir, providers) {
+        match execute_node(snapshot, index, &generated_dir, provider) {
             Ok(log) => {
                 if run_control.is_cancelled(&run_id) {
                     let message = "运行已打断，当前节点结果已忽略".to_string();
@@ -227,7 +227,7 @@ pub fn run_nodes(
                         Some(node_metrics(
                             snapshot,
                             index,
-                            providers,
+                            provider,
                             None,
                             Some(node_started_at),
                             Some(timestamp()),
@@ -260,7 +260,7 @@ pub fn run_nodes(
                     Some(node_metrics(
                         snapshot,
                         index,
-                        providers,
+                        provider,
                         None,
                         Some(node_started_at),
                         Some(finished_at),
@@ -304,7 +304,7 @@ pub fn run_nodes(
                         Some(node_metrics(
                             snapshot,
                             index,
-                            providers,
+                            provider,
                             None,
                             Some(node_started_at),
                             Some(timestamp()),
@@ -348,7 +348,7 @@ pub fn run_nodes(
                     Some(node_metrics(
                         snapshot,
                         index,
-                        providers,
+                        provider,
                         None,
                         Some(node_started_at),
                         Some(timestamp()),
@@ -393,7 +393,7 @@ fn execute_node(
     snapshot: &mut WorkflowSnapshot,
     node_index: usize,
     generated_dir: &PathBuf,
-    providers: &[ProviderConfig],
+    provider: &ProviderConfig,
 ) -> Result<String, String> {
     let node = snapshot.nodes[node_index].clone();
 
@@ -417,10 +417,10 @@ fn execute_node(
         }
         WorkflowNodeKind::TextToImage => {
             let provider = resolve_ai_node_provider(
-                providers,
-                node.data.provider_id.as_deref(),
+                provider,
                 node.data.model.as_deref(),
                 ProviderCapability::TextToImage,
+                WorkflowNodeKind::TextToImage,
             )?;
             let prompt = connected_text(snapshot, &node.id).or(node.data.prompt_override);
             let prompt = prompt.unwrap_or_default();
@@ -445,10 +445,10 @@ fn execute_node(
         }
         WorkflowNodeKind::ImageToImage => {
             let provider = resolve_ai_node_provider(
-                providers,
-                node.data.provider_id.as_deref(),
+                provider,
                 node.data.model.as_deref(),
                 ProviderCapability::ImageToImage,
+                WorkflowNodeKind::ImageToImage,
             )?;
             let prompt = connected_text(snapshot, &node.id).or(node.data.prompt_override);
             let prompt = prompt.unwrap_or_default();
@@ -872,26 +872,21 @@ fn reusable_image_source(image: &str) -> bool {
 fn node_metrics(
     snapshot: &WorkflowSnapshot,
     node_index: usize,
-    providers: &[ProviderConfig],
+    provider: &ProviderConfig,
     queued_at: Option<String>,
     started_at: Option<String>,
     finished_at: Option<String>,
     duration_ms: Option<u128>,
 ) -> RunNodeMetrics {
     let node = &snapshot.nodes[node_index];
-    let provider_name = node
-        .data
-        .provider_id
-        .as_deref()
-        .and_then(|provider_id| providers.iter().find(|provider| provider.id == provider_id))
-        .map(|provider| provider.name.clone());
+    let provider_name = Some(provider.name.clone());
 
     RunNodeMetrics {
         queued_at,
         started_at,
         finished_at,
         duration_ms,
-        provider_id: node.data.provider_id.clone(),
+        provider_id: Some(provider.id.clone()),
         provider_name,
         model: node.data.model.clone(),
         retry_count: Some(0),

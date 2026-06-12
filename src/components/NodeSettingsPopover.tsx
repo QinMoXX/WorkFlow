@@ -1,8 +1,7 @@
 import { Box, Camera, ChevronDown, Expand, ImageIcon, Map, Send, Sparkles } from "lucide-react";
 import { ViewportPortal } from "@xyflow/react";
-import { ProviderConfig } from "../types/provider";
 import { WorkflowNode, WorkflowNodeData } from "../types/workflow";
-import { providerCapabilityForNode } from "../lib/providerPresets";
+import { modelsForNode } from "../lib/modelCatalog";
 import {
   aspectRatioOptions,
   nodeSettingsPopoverCopy,
@@ -11,7 +10,6 @@ import {
 
 export interface ReadonlyNodeSettingsPopoverProps {
   readonly node: WorkflowNode | null;
-  readonly providers: ProviderConfig[];
   readonly onChange: (patch: Partial<WorkflowNodeData>) => void;
   readonly onImportImage: (file: File) => void;
   readonly onRun: () => void;
@@ -23,7 +21,6 @@ export interface ReadonlyNodeSettingsPopoverProps {
 
 export function NodeSettingsPopover({
   node,
-  providers,
   onChange,
   onImportImage,
   onRun,
@@ -35,26 +32,12 @@ export function NodeSettingsPopover({
   if (!node) return null;
 
   const data = node.data;
-  const providerCapability = providerCapabilityForNode(data.kind);
-  const selectableProviders = providerCapability
-    ? providers.filter((provider) => provider.models.some((model) => model.capability === providerCapability))
-    : [];
-  const selectedProvider = providers.find((provider) => provider.id === data.providerId) ?? null;
-  const selectableModels =
-    selectedProvider && providerCapability
-      ? selectedProvider.models.filter((model) => model.capability === providerCapability)
-      : [];
+  const selectableModels = modelsForNode(data.kind);
   const nodeHeight = node.measured?.height ?? readNumericDimension(node.style?.height, 160);
   const nodeWidth = node.measured?.width ?? readNumericDimension(node.style?.width, 240);
   const popoverWidth = 800;
   const left = node.position.x + nodeWidth / 2 - popoverWidth / 2;
   const top = node.position.y + nodeHeight + 18;
-
-  const handleProviderChange = (providerId: string) => {
-    const provider = providers.find((item) => item.id === providerId);
-    const model = provider?.models.find((item) => item.capability === providerCapability);
-    onChange({ providerId, model: model?.id ?? "" });
-  };
 
   const runLabel = canCancelRun
     ? isCancellingRun
@@ -172,23 +155,9 @@ export function NodeSettingsPopover({
           {(data.kind === "textToImage" || data.kind === "imageToImage") && (
             <>
               <label className={footerSelectClassName}>
-                <Sparkles size={16} />
+                <Sparkles className="shrink-0" size={16} />
                 <select
-                  className={footerSelectInputClassName}
-                  value={data.providerId ?? ""}
-                  onChange={(event) => handleProviderChange(event.target.value)}
-                >
-                  <option value="">{nodeSettingsPopoverCopy.providerFallback}</option>
-                  {selectableProviders.map((provider) => (
-                    <option key={provider.id} value={provider.id}>
-                      {provider.name || provider.id}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className={footerSelectClassName}>
-                <select
-                  className={footerSelectInputClassName}
+                  className={footerModelSelectInputClassName}
                   value={data.model ?? ""}
                   onChange={(event) => onChange({ model: event.target.value })}
                 >
@@ -199,11 +168,11 @@ export function NodeSettingsPopover({
                     </option>
                   ))}
                 </select>
-                <ChevronDown size={14} />
+                <ChevronDown className={footerSelectIconClassName} size={14} />
               </label>
               <label className={footerSelectClassName}>
                 <select
-                  className={footerSelectInputClassName}
+                  className={footerAspectSelectInputClassName}
                   value={data.aspectRatio ?? "1:1"}
                   onChange={(event) => onChange({ aspectRatio: event.target.value })}
                 >
@@ -213,7 +182,7 @@ export function NodeSettingsPopover({
                     </option>
                   ))}
                 </select>
-                <ChevronDown size={14} />
+                <ChevronDown className={footerSelectIconClassName} size={14} />
               </label>
             </>
           )}
@@ -262,9 +231,12 @@ const modeButtonClassName =
 const inputClassName =
   "w-full rounded-lg border border-border-default bg-control px-3 py-2 text-sm font-normal text-text-primary outline-none transition placeholder:text-text-muted focus:border-accent focus:ring-2 focus:ring-accent/20";
 const footerSelectClassName =
-  "inline-flex h-9 items-center gap-2 rounded-lg bg-control px-3 text-sm font-semibold text-text-primary border border-border-default transition hover:border-border-strong";
+  "relative inline-flex h-9 items-center gap-2 rounded-lg border border-border-default bg-control px-3 text-sm font-semibold text-text-primary transition focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20 hover:border-border-strong";
 const footerSelectInputClassName =
-  "min-w-0 max-w-40 flex-1 bg-transparent text-sm font-semibold text-text-primary outline-none";
+  "min-w-0 appearance-none truncate border-0 bg-transparent p-0 text-sm font-semibold text-text-primary shadow-none outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0";
+const footerModelSelectInputClassName = `${footerSelectInputClassName} w-44 pr-6`;
+const footerAspectSelectInputClassName = `${footerSelectInputClassName} w-16 pr-6 text-center`;
+const footerSelectIconClassName = "pointer-events-none absolute right-3 shrink-0 text-text-muted";
 
 function readNumericDimension(value: unknown, fallback: number) {
   const numericValue = typeof value === "number" ? value : Number(value);

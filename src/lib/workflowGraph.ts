@@ -132,8 +132,8 @@ export function resolveConnectionRule(
 export function nodeSummary(data: WorkflowNodeData) {
   if (data.kind === "textInput") return data.content || "输入 prompt 文本";
   if (data.kind === "imageInput") return data.imagePath || "选择或粘贴图片路径";
-  if (data.kind === "textToImage") return `${data.providerId || "provider"} / ${data.model || "model"}`;
-  if (data.kind === "imageToImage") return `strength ${data.strength ?? 0.65}`;
+  if (data.kind === "textToImage") return data.model || "选择模型";
+  if (data.kind === "imageToImage") return `${data.model || "选择模型"} · strength ${data.strength ?? 0.65}`;
   if (data.kind === "group") return "视觉分组，不参与执行语义";
   return data.saveDirectory ? `保存到 ${data.saveDirectory}` : "等待图片输入";
 }

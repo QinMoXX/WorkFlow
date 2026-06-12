@@ -18,8 +18,8 @@ use super::{
     graph::{execution_order_for_node, topological_order, validate_connections},
     models::{ImportedImage, RunResponse, WorkflowSnapshot},
     providers::{
-        load_provider_configs as load_provider_config_list,
-        save_provider_configs as save_provider_config_list, ProviderConfig,
+        load_api_config as load_api_config_value, load_runtime_provider,
+        save_api_config as save_api_config_value, ApiConfig,
     },
     storage::{
         load_workflow_snapshot, save_image_as_path, save_imported_data_url, save_workflow_snapshot,
@@ -134,13 +134,13 @@ pub fn copy_image_to_clipboard(image_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn save_provider_configs(app: AppHandle, providers: Vec<ProviderConfig>) -> Result<(), String> {
-    save_provider_config_list(&app, &providers)
+pub fn save_api_config(app: AppHandle, config: ApiConfig) -> Result<(), String> {
+    save_api_config_value(&app, &config)
 }
 
 #[tauri::command]
-pub fn load_provider_configs(app: AppHandle) -> Result<Vec<ProviderConfig>, String> {
-    load_provider_config_list(&app)
+pub fn load_api_config(app: AppHandle) -> Result<ApiConfig, String> {
+    load_api_config_value(&app)
 }
 
 #[tauri::command]
@@ -163,11 +163,11 @@ pub async fn run_node(
     tauri::async_runtime::spawn_blocking(move || {
         let mut snapshot = snapshot;
         validate_connections(&snapshot)?;
-        let providers = load_provider_config_list(&app)?;
+        let provider = load_runtime_provider(&app)?;
         let execution_order = execution_order_for_node(&snapshot, &node_id)?;
         run_nodes(
             &app,
-            &providers,
+            &provider,
             &mut snapshot,
             execution_order,
             "node",
@@ -191,11 +191,11 @@ pub async fn run_workflow(
     tauri::async_runtime::spawn_blocking(move || {
         let mut snapshot = snapshot;
         validate_connections(&snapshot)?;
-        let providers = load_provider_config_list(&app)?;
+        let provider = load_runtime_provider(&app)?;
         let execution_order = topological_order(&snapshot)?;
         run_nodes(
             &app,
-            &providers,
+            &provider,
             &mut snapshot,
             execution_order,
             "workflow",

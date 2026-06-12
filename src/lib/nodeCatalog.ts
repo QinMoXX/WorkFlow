@@ -1,5 +1,6 @@
 import { WorkflowEdge, WorkflowNode, WorkflowNodeData, WorkflowNodeKind } from "../types/workflow";
 import { nodeTemplates } from "../data/mockData";
+import { firstModelForNode } from "./modelCatalog";
 
 export { nodeTemplates };
 
@@ -23,8 +24,7 @@ export const initialNodes: WorkflowNode[] = [
       kind: "textToImage",
       title: "文生图",
       status: "idle",
-      providerId: "openai",
-      model: "gpt-image-1",
+      model: firstModelForNode("textToImage"),
       aspectRatio: "1:1",
       stylePreset: "product",
     },
@@ -71,13 +71,11 @@ export function createNode(kind: WorkflowNodeKind, index: number): WorkflowNode 
   if (kind === "textInput") baseData.content = "";
   if (kind === "imageInput") baseData.imagePath = "";
   if (kind === "textToImage") {
-    baseData.providerId = "openai";
-    baseData.model = "gpt-image-1";
+    baseData.model = firstModelForNode(kind);
     baseData.aspectRatio = "1:1";
   }
   if (kind === "imageToImage") {
-    baseData.providerId = "openai";
-    baseData.model = "gpt-image-1";
+    baseData.model = firstModelForNode(kind);
     baseData.strength = 0.65;
     baseData.aspectRatio = "1:1";
   }

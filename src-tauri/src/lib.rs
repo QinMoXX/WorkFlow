@@ -2,8 +2,8 @@ mod workflow;
 
 use workflow::commands::{
     cancel_run, copy_image_to_clipboard, debug_frontend_logs, import_clipboard_image,
-    import_image_data_url, load_provider_configs, load_workflow, run_node, run_workflow,
-    save_image_as, save_provider_configs, save_workflow, show_in_folder, RunControlState,
+    import_image_data_url, load_api_config, load_workflow, run_node, run_workflow, save_api_config,
+    save_image_as, save_workflow, show_in_folder, RunControlState,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -22,8 +22,8 @@ pub fn run() {
             save_image_as,
             show_in_folder,
             copy_image_to_clipboard,
-            save_provider_configs,
-            load_provider_configs,
+            save_api_config,
+            load_api_config,
             cancel_run,
             run_node,
             run_workflow

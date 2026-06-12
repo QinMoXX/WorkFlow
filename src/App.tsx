@@ -62,7 +62,6 @@ function App(_props: ReadonlyAppProps) {
             <Background gap={22} size={1} />
             <NodeSettingsPopover
               node={workflow.nodeSettingsNode}
-              providers={workflow.providers}
               onChange={workflow.updateSelectedNode}
               onImportImage={workflow.importImageToSelectedNode}
               onRun={() => workflow.nodeSettingsNode && workflow.runNode(workflow.nodeSettingsNode.id)}
@@ -129,9 +128,9 @@ function App(_props: ReadonlyAppProps) {
         <ToastStack toasts={workflow.toasts} />
         <AiSettingsPanel
           isOpen={workflow.isSettingsOpen}
-          providers={workflow.providers}
+          config={workflow.apiConfig}
           onClose={workflow.closeSettings}
-          onSave={workflow.saveProviderConfigs}
+          onSave={workflow.saveApiConfig}
         />
       </main>
     </ReactFlowProvider>

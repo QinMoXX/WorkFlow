@@ -14,9 +14,9 @@ import {
 } from "@xyflow/react";
 import { WorkflowNodeCard } from "../components/WorkflowNodeCard";
 import { createNode, initialEdges, initialNodes } from "../lib/nodeCatalog";
-import { defaultProviderConfigs, firstProviderPreset } from "../lib/providerPresets";
+import { firstModelForNode } from "../lib/modelCatalog";
 import { fromSnapshot, resolveConnectionRule, toPersistableSnapshot, toSnapshot } from "../lib/workflowGraph";
-import { ProviderConfig } from "../types/provider";
+import { ApiConfig } from "../types/provider";
 import {
   RunResponse,
   ImportedImage,
@@ -133,7 +133,7 @@ export function useWorkflowApp() {
   const [nodePickerMenu, setNodePickerMenu] = useState<NodePickerMenu | null>(null);
   const [isDraggingNode, setIsDraggingNode] = useState(false);
   const [nodeSettingsNodeId, setNodeSettingsNodeId] = useState<string | null>(null);
-  const [providers, setProviders] = useState<ProviderConfig[]>(defaultProviderConfigs);
+  const [apiConfig, setApiConfig] = useState<ApiConfig>({ apiKey: "" });
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<WorkflowNode, WorkflowEdge> | null>(null);
   const [activeRun, setActiveRun] = useState<ActiveRunState | null>(null);
   const activeRunIdRef = useRef<string | null>(null);
@@ -280,12 +280,10 @@ export function useWorkflowApp() {
   }, [appendLogs, applySnapshot]);
 
   useEffect(() => {
-    invoke<ProviderConfig[]>("load_provider_configs")
-      .then((configs) => {
-        if (configs.length > 0) {
-          setProviders(configs);
-          appendLogs(["已加载 AI 配置"]);
-        }
+    invoke<ApiConfig>("load_api_config")
+      .then((config) => {
+        setApiConfig(config);
+        appendLogs(["已加载 AI 配置"]);
       })
       .catch((error) => appendLogs([`AI 配置加载失败：${String(error)}`]));
   }, [appendLogs]);
@@ -562,12 +560,10 @@ export function useWorkflowApp() {
     const nextNode = createNode(kind, nodes.length);
     if (position) nextNode.position = position;
     if (kind === "textToImage") {
-      const preset = firstProviderPreset(providers, "textToImage");
-      if (preset) nextNode.data = { ...nextNode.data, ...preset };
+      nextNode.data = { ...nextNode.data, model: firstModelForNode(kind) };
     }
     if (kind === "imageToImage") {
-      const preset = firstProviderPreset(providers, "imageToImage");
-      if (preset) nextNode.data = { ...nextNode.data, ...preset };
+      nextNode.data = { ...nextNode.data, model: firstModelForNode(kind) };
     }
     setNodes((current) => [...current, nextNode]);
     setSelectedNodeId(nextNode.id);
@@ -628,10 +624,10 @@ export function useWorkflowApp() {
     }
   };
 
-  const saveProviderConfigs = async (nextProviders: ProviderConfig[]) => {
+  const saveApiConfig = async (nextConfig: ApiConfig) => {
     try {
-      await invoke("save_provider_configs", { providers: nextProviders });
-      setProviders(nextProviders);
+      await invoke("save_api_config", { config: nextConfig });
+      setApiConfig(nextConfig);
       setIsSettingsOpen(false);
       appendLogs(["已保存 AI 配置"]);
     } catch (error) {
@@ -1173,7 +1169,7 @@ export function useWorkflowApp() {
     nodeTypes,
     selectedNode,
     nodeSettingsNode,
-    providers,
+    apiConfig,
     toasts,
     isSettingsOpen,
     nodeContextMenu,
@@ -1198,7 +1194,7 @@ export function useWorkflowApp() {
     saveWorkflow,
     updateSelectedNode,
     importImageToSelectedNode,
-    saveProviderConfigs,
+    saveApiConfig,
     openImageContextMenu,
     openEdgeContextMenu,
     openPaneContextMenu,

@@ -6,11 +6,6 @@ export type ProviderModel = {
   capability: ProviderCapability;
 };
 
-export type ProviderConfig = {
-  id: string;
-  name: string;
-  baseUrl: string;
+export type ApiConfig = {
   apiKey: string;
-  proxyUrl?: string;
-  models: ProviderModel[];
 };

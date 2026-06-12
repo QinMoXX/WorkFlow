@@ -1,11 +1,9 @@
 import { WorkflowNode, WorkflowNodeData } from "../types/workflow";
-import { ProviderConfig } from "../types/provider";
-import { providerCapabilityForNode } from "../lib/providerPresets";
+import { modelsForNode } from "../lib/modelCatalog";
 import { appCopy, aspectRatioOptions, propertyPanelCopy } from "../data/mockData";
 
 export interface ReadonlyPropertyPanelProps {
   readonly node: WorkflowNode | null;
-  readonly providers: ProviderConfig[];
   readonly onChange: (patch: Partial<WorkflowNodeData>) => void;
   readonly onImportImage: (file: File) => void;
   readonly onRun: () => void;
@@ -17,7 +15,6 @@ export interface ReadonlyPropertyPanelProps {
 
 export function PropertyPanel({
   node,
-  providers,
   onChange,
   onImportImage,
   onRun,
@@ -36,23 +33,7 @@ export function PropertyPanel({
   }
 
   const data = node.data;
-  const providerCapability = providerCapabilityForNode(data.kind);
-  const selectableProviders = providerCapability
-    ? providers.filter((provider) =>
-        provider.models.some((model) => model.capability === providerCapability),
-      )
-    : [];
-  const selectedProvider = providers.find((provider) => provider.id === data.providerId) ?? null;
-  const selectableModels =
-    selectedProvider && providerCapability
-      ? selectedProvider.models.filter((model) => model.capability === providerCapability)
-      : [];
-
-  const handleProviderChange = (providerId: string) => {
-    const provider = providers.find((item) => item.id === providerId);
-    const model = provider?.models.find((item) => item.capability === providerCapability);
-    onChange({ providerId, model: model?.id ?? "" });
-  };
+  const selectableModels = modelsForNode(data.kind);
 
   return (
     <div className="grid gap-4">
@@ -131,21 +112,6 @@ export function PropertyPanel({
 
       {(data.kind === "textToImage" || data.kind === "imageToImage") && (
         <>
-          <label className={fieldClassName}>
-            {propertyPanelCopy.provider}
-            <select
-              className={inputClassName}
-              value={data.providerId ?? ""}
-              onChange={(event) => handleProviderChange(event.target.value)}
-            >
-              <option value="">{propertyPanelCopy.providerPlaceholder}</option>
-              {selectableProviders.map((provider) => (
-                <option key={provider.id} value={provider.id}>
-                  {provider.name || provider.id}
-                </option>
-              ))}
-            </select>
-          </label>
           <label className={fieldClassName}>
             {propertyPanelCopy.model}
             <select className={inputClassName} value={data.model ?? ""} onChange={(event) => onChange({ model: event.target.value })}>

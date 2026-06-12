@@ -1,7 +1,13 @@
-use std::{collections::HashSet, fs};
+use std::fs;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
+
+use super::models::WorkflowNodeKind;
+
+pub const NEW_API_BASE_URL: &str = "https://new-api-production-c695.up.railway.app/v1";
+const NEW_API_PROVIDER_ID: &str = "new-api";
+const NEW_API_PROVIDER_NAME: &str = "New API";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -30,109 +36,76 @@ pub struct ProviderConfig {
     pub models: Vec<ProviderModel>,
 }
 
-pub fn save_provider_configs(app: &AppHandle, providers: &[ProviderConfig]) -> Result<(), String> {
-    validate_provider_configs(providers)?;
-    let path = provider_config_path(app)?;
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiConfig {
+    pub api_key: String,
+}
+
+pub fn save_api_config(app: &AppHandle, config: &ApiConfig) -> Result<(), String> {
+    if config.api_key.trim().is_empty() {
+        return Err("API Key 不能为空".to_string());
+    }
+
+    let path = api_config_path(app)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| {
             format!(
-                "创建供应商配置目录失败：{}；原因：{}",
+                "创建 AI 配置目录失败：{}；原因：{}",
                 parent.display(),
                 error
             )
         })?;
     }
 
-    let json = serde_json::to_string_pretty(providers)
-        .map_err(|error| format!("序列化供应商配置失败：{}", error))?;
+    let json = serde_json::to_string_pretty(config)
+        .map_err(|error| format!("序列化 AI 配置失败：{}", error))?;
     fs::write(&path, json)
-        .map_err(|error| format!("写入供应商配置失败：{}；原因：{}", path.display(), error))
+        .map_err(|error| format!("写入 AI 配置失败：{}；原因：{}", path.display(), error))
 }
 
-pub fn load_provider_configs(app: &AppHandle) -> Result<Vec<ProviderConfig>, String> {
-    let path = provider_config_path(app)?;
-    if !path.exists() {
-        return Ok(default_provider_configs());
+pub fn load_api_config(app: &AppHandle) -> Result<ApiConfig, String> {
+    let path = api_config_path(app)?;
+    if path.exists() {
+        let json = fs::read_to_string(&path)
+            .map_err(|error| format!("读取 AI 配置失败：{}；原因：{}", path.display(), error))?;
+        return serde_json::from_str(&json).map_err(|error| {
+            format!(
+                "解析 AI 配置 JSON 失败：{}；原因：{}",
+                path.display(),
+                error
+            )
+        });
     }
 
-    let json = fs::read_to_string(&path)
-        .map_err(|error| format!("读取供应商配置失败：{}；原因：{}", path.display(), error))?;
-    serde_json::from_str(&json).map_err(|error| {
-        format!(
-            "解析供应商配置 JSON 失败：{}；原因：{}",
-            path.display(),
-            error
-        )
+    load_legacy_api_key(app).map(|api_key| ApiConfig { api_key })
+}
+
+pub fn load_runtime_provider(app: &AppHandle) -> Result<ProviderConfig, String> {
+    let config = load_api_config(app)?;
+    if config.api_key.trim().is_empty() {
+        return Err("缺少 New API Key，请先在 AI 配置中填写 API Key".to_string());
+    }
+
+    Ok(ProviderConfig {
+        id: NEW_API_PROVIDER_ID.to_string(),
+        name: NEW_API_PROVIDER_NAME.to_string(),
+        base_url: NEW_API_BASE_URL.to_string(),
+        api_key: config.api_key,
+        proxy_url: None,
+        models: model_catalog(),
     })
 }
 
-fn default_provider_configs() -> Vec<ProviderConfig> {
-    vec![
-        ProviderConfig {
-            id: "openai".to_string(),
-            name: "OpenAI".to_string(),
-            base_url: "https://api.openai.com/v1".to_string(),
-            api_key: String::new(),
-            proxy_url: None,
-            models: vec![
-                ProviderModel {
-                    id: "gpt-image-1".to_string(),
-                    name: "GPT Image 1".to_string(),
-                    capability: ProviderCapability::TextToImage,
-                },
-                ProviderModel {
-                    id: "gpt-image-1".to_string(),
-                    name: "GPT Image 1 Edit".to_string(),
-                    capability: ProviderCapability::ImageToImage,
-                },
-            ],
-        },
-        ProviderConfig {
-            id: "agnes".to_string(),
-            name: "Agnes AI".to_string(),
-            base_url: "https://apihub.agnes-ai.com/v1".to_string(),
-            api_key: String::new(),
-            proxy_url: None,
-            models: vec![
-                ProviderModel {
-                    id: "agnes-image-2.0-flash".to_string(),
-                    name: "Agnes Image 2.0 Flash".to_string(),
-                    capability: ProviderCapability::TextToImage,
-                },
-                ProviderModel {
-                    id: "agnes-image-2.0-flash".to_string(),
-                    name: "Agnes Image 2.0 Flash Edit".to_string(),
-                    capability: ProviderCapability::ImageToImage,
-                },
-            ],
-        },
-    ]
-}
-
 pub fn resolve_ai_node_provider<'a>(
-    providers: &'a [ProviderConfig],
-    provider_id: Option<&str>,
+    provider: &'a ProviderConfig,
     model_id: Option<&str>,
     capability: ProviderCapability,
+    node_kind: WorkflowNodeKind,
 ) -> Result<&'a ProviderConfig, String> {
-    let provider_id = provider_id
-        .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| "缺少供应商预设".to_string())?;
     let model_id = model_id
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| "缺少模型预设".to_string())?;
-
-    let provider = providers
-        .iter()
-        .find(|item| item.id == provider_id)
-        .ok_or_else(|| format!("供应商预设不存在：{}", provider_id))?;
-
-    if provider.base_url.trim().is_empty() {
-        return Err(format!("供应商 {} 缺少 URL", provider.name));
-    }
-    if provider.api_key.trim().is_empty() {
-        return Err(format!("供应商 {} 缺少 API Key", provider.name));
-    }
 
     provider
         .models
@@ -140,41 +113,92 @@ pub fn resolve_ai_node_provider<'a>(
         .find(|model| model.id == model_id && model.capability == capability)
         .ok_or_else(|| format!("模型预设不存在或能力不匹配：{}", model_id))?;
 
+    if !model_whitelist_for_node(node_kind).contains(&model_id) {
+        return Err(format!("模型 {} 不在当前节点白名单中", model_id));
+    }
+
     Ok(provider)
 }
 
-fn validate_provider_configs(providers: &[ProviderConfig]) -> Result<(), String> {
-    let mut provider_ids = HashSet::new();
-
-    for provider in providers {
-        if provider.id.trim().is_empty() {
-            return Err("供应商 ID 不能为空".to_string());
-        }
-        if !provider_ids.insert(provider.id.trim().to_string()) {
-            return Err(format!("供应商 ID 重复：{}", provider.id));
-        }
-        if provider.name.trim().is_empty() {
-            return Err(format!("供应商 {} 名称不能为空", provider.id));
-        }
-        let mut model_keys = HashSet::new();
-        for model in &provider.models {
-            if model.id.trim().is_empty() {
-                return Err(format!("供应商 {} 存在空模型 ID", provider.name));
-            }
-            let model_key = format!("{}::{:?}", model.id.trim(), model.capability);
-            if !model_keys.insert(model_key) {
-                return Err(format!(
-                    "供应商 {} 存在重复模型 ID 和能力组合：{}",
-                    provider.name, model.id
-                ));
-            }
-        }
-    }
-
-    Ok(())
+fn model_catalog() -> Vec<ProviderModel> {
+    vec![
+        ProviderModel {
+            id: "agnes-2.0-flash".to_string(),
+            name: "Agnes 2.0 Flash".to_string(),
+            capability: ProviderCapability::TextToImage,
+        },
+        ProviderModel {
+            id: "agnes-image-2.0-flash".to_string(),
+            name: "Agnes Image 2.0 Flash".to_string(),
+            capability: ProviderCapability::TextToImage,
+        },
+        ProviderModel {
+            id: "gpt-image-1".to_string(),
+            name: "GPT Image 1".to_string(),
+            capability: ProviderCapability::TextToImage,
+        },
+        ProviderModel {
+            id: "agnes-2.0-flash".to_string(),
+            name: "Agnes 2.0 Flash Edit".to_string(),
+            capability: ProviderCapability::ImageToImage,
+        },
+        ProviderModel {
+            id: "agnes-image-2.0-flash".to_string(),
+            name: "Agnes Image 2.0 Flash Edit".to_string(),
+            capability: ProviderCapability::ImageToImage,
+        },
+        ProviderModel {
+            id: "gpt-image-1".to_string(),
+            name: "GPT Image 1 Edit".to_string(),
+            capability: ProviderCapability::ImageToImage,
+        },
+    ]
 }
 
-fn provider_config_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+fn model_whitelist_for_node(kind: WorkflowNodeKind) -> &'static [&'static str] {
+    match kind {
+        WorkflowNodeKind::TextToImage => {
+            &["agnes-2.0-flash", "agnes-image-2.0-flash", "gpt-image-1"]
+        }
+        WorkflowNodeKind::ImageToImage => {
+            &["agnes-2.0-flash", "agnes-image-2.0-flash", "gpt-image-1"]
+        }
+        _ => &[],
+    }
+}
+
+fn load_legacy_api_key(app: &AppHandle) -> Result<String, String> {
+    let path = legacy_provider_config_path(app)?;
+    if !path.exists() {
+        return Ok(String::new());
+    }
+
+    let json = fs::read_to_string(&path)
+        .map_err(|error| format!("读取旧供应商配置失败：{}；原因：{}", path.display(), error))?;
+    let providers: Vec<ProviderConfig> = serde_json::from_str(&json).map_err(|error| {
+        format!(
+            "解析旧供应商配置 JSON 失败：{}；原因：{}",
+            path.display(),
+            error
+        )
+    })?;
+
+    Ok(providers
+        .iter()
+        .find(|provider| provider.base_url.trim_end_matches('/') == NEW_API_BASE_URL)
+        .or_else(|| providers.first())
+        .map(|provider| provider.api_key.clone())
+        .unwrap_or_default())
+}
+
+fn api_config_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map(|path| path.join("ai").join("config.json"))
+        .map_err(|error| format!("获取应用数据目录失败：{}", error))
+}
+
+fn legacy_provider_config_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     app.path()
         .app_data_dir()
         .map(|path| path.join("providers").join("config.json"))

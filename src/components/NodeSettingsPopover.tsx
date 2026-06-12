@@ -262,9 +262,9 @@ const modeButtonClassName =
 const inputClassName =
   "w-full rounded-lg border border-border-default bg-control px-3 py-2 text-sm font-normal text-text-primary outline-none transition placeholder:text-text-muted focus:border-accent focus:ring-2 focus:ring-accent/20";
 const footerSelectClassName =
-  "inline-flex h-9 items-center gap-2 rounded-lg bg-panel px-2 text-sm font-semibold text-text-primary";
+  "inline-flex h-9 items-center gap-2 rounded-lg bg-control px-3 text-sm font-semibold text-text-primary border border-border-default transition hover:border-border-strong";
 const footerSelectInputClassName =
-  "max-w-40 bg-transparent text-sm font-semibold text-text-primary outline-none";
+  "min-w-0 max-w-40 flex-1 bg-transparent text-sm font-semibold text-text-primary outline-none";
 
 function readNumericDimension(value: unknown, fallback: number) {
   const numericValue = typeof value === "number" ? value : Number(value);

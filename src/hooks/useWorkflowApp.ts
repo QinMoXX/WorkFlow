@@ -71,12 +71,17 @@ type ConnectionPickerOrigin = {
 type NodePickerMenu = PaneContextMenu & {
   candidateKinds?: WorkflowNodeKind[];
   connectionOrigin?: ConnectionPickerOrigin;
+  connectionLine?: {
+    fromX: number;
+    fromY: number;
+    toX: number;
+    toY: number;
+  };
 };
 
 type ActiveConnectionDrag = ConnectionPickerOrigin & {
   startX: number;
   startY: number;
-  hasOpenedPicker: boolean;
 };
 
 type ClipboardGraph = {
@@ -103,7 +108,7 @@ type WorkspaceUiState = {
 const ACTIVE_NODE_STATUSES = new Set(["queued", "running"]);
 const WORKSPACE_UI_STATE_KEY = "workflow.workspace.ui-state";
 const NODE_SETTINGS_POPOVER_DELAY_MS = 240;
-const CONNECTION_PICKER_THRESHOLD_PX = 120;
+const CONNECTION_PICKER_MIN_DISTANCE_PX = 80;
 
 function readWorkspaceUiState(): WorkspaceUiState {
   try {
@@ -173,6 +178,7 @@ export function useWorkflowApp() {
   const latestViewportRef = useRef<Viewport | undefined>(initialUiStateRef.current.viewport);
   const activeConnectionDragRef = useRef<ActiveConnectionDrag | null>(null);
   const suppressConnectionSelectionRef = useRef(false);
+  const suppressCanvasCloseUntilRef = useRef(0);
 
   const nodeTypes = useMemo(() => ({ workflowNode: WorkflowNodeCard }), []);
   const selectedNode = useMemo(
@@ -218,6 +224,10 @@ export function useWorkflowApp() {
   }, []);
 
   const closeContextMenus = useCallback(() => {
+    if (performance.now() < suppressCanvasCloseUntilRef.current) {
+      return;
+    }
+
     suppressConnectionSelectionRef.current = false;
     if (nodeSettingsDelayRef.current !== null) {
       window.clearTimeout(nodeSettingsDelayRef.current);
@@ -249,8 +259,8 @@ export function useWorkflowApp() {
   );
 
   const openConnectionPicker = useCallback(
-    (origin: ConnectionPickerOrigin, clientX: number, clientY: number) => {
-      const candidateKinds = connectionCandidateKinds(origin);
+    (drag: ActiveConnectionDrag, clientX: number, clientY: number) => {
+      const candidateKinds = connectionCandidateKinds(drag);
       if (candidateKinds.length === 0) return;
 
       const position = flowInstance
@@ -259,6 +269,7 @@ export function useWorkflowApp() {
 
       setSelectedNodeId(null);
       setNodeSettingsNodeId(null);
+      suppressCanvasCloseUntilRef.current = performance.now() + 240;
       setNodeContextMenu(null);
       setEdgeContextMenu(null);
       setPaneContextMenu(null);
@@ -268,7 +279,17 @@ export function useWorkflowApp() {
         flowX: position.x,
         flowY: position.y,
         candidateKinds,
-        connectionOrigin: origin,
+        connectionOrigin: {
+          nodeId: drag.nodeId,
+          handleId: drag.handleId,
+          handleType: drag.handleType,
+        },
+        connectionLine: {
+          fromX: drag.startX,
+          fromY: drag.startY,
+          toX: clientX,
+          toY: clientY + 18,
+        },
       });
     },
     [connectionCandidateKinds, flowInstance],
@@ -596,6 +617,15 @@ export function useWorkflowApp() {
     setSelectedNodeId(nodeId);
   }, []);
 
+  const handlePaneClick = useCallback(() => {
+    if (performance.now() < suppressCanvasCloseUntilRef.current) {
+      return;
+    }
+
+    selectNode(null);
+    closeContextMenus();
+  }, [closeContextMenus, selectNode]);
+
   const handleConnect = useCallback(
     (connection: Connection) => {
       const source = nodes.find((node) => node.id === connection.source);
@@ -655,7 +685,6 @@ export function useWorkflowApp() {
         handleType: params.handleType,
         startX: point.x,
         startY: point.y,
-        hasOpenedPicker: false,
       };
       suppressConnectionSelectionRef.current = true;
       if (nodeSettingsDelayRef.current !== null) {
@@ -669,15 +698,30 @@ export function useWorkflowApp() {
     [],
   );
 
-  const handleConnectEnd = useCallback(() => {
-    const hadConnectionPicker = activeConnectionDragRef.current?.hasOpenedPicker ?? false;
-    activeConnectionDragRef.current = null;
-    if (!hadConnectionPicker) {
-      window.setTimeout(() => {
-        suppressConnectionSelectionRef.current = false;
-      }, 120);
-    }
-  }, []);
+  const handleConnectEnd = useCallback(
+    (event: MouseEvent | TouchEvent, connectionState: { isValid: boolean | null }) => {
+      const drag = activeConnectionDragRef.current;
+      const point = clientPointFromEvent(event);
+      const shouldOpenPicker =
+        drag &&
+        point &&
+        connectionState.isValid !== true &&
+        Math.hypot(point.x - drag.startX, point.y - drag.startY) >= CONNECTION_PICKER_MIN_DISTANCE_PX;
+
+      if (shouldOpenPicker) {
+        openConnectionPicker(drag, point.x, point.y);
+      }
+
+      const didOpenPicker = Boolean(shouldOpenPicker);
+      activeConnectionDragRef.current = null;
+      if (!didOpenPicker) {
+        window.setTimeout(() => {
+          suppressConnectionSelectionRef.current = false;
+        }, 120);
+      }
+    },
+    [openConnectionPicker],
+  );
 
   const handleAddNode = (kind: WorkflowNodeKind, position?: { x: number; y: number }) => {
     suppressConnectionSelectionRef.current = false;
@@ -760,29 +804,6 @@ export function useWorkflowApp() {
     },
     [appendLogs, nodes, pushHistory, setEdges, setNodes],
   );
-
-  useEffect(() => {
-    const handleConnectionPointerMove = (event: PointerEvent | TouchEvent) => {
-      const drag = activeConnectionDragRef.current;
-      if (!drag || drag.hasOpenedPicker) return;
-
-      const point = clientPointFromEvent(event);
-      if (!point) return;
-
-      const distance = Math.hypot(point.x - drag.startX, point.y - drag.startY);
-      if (distance < CONNECTION_PICKER_THRESHOLD_PX) return;
-
-      drag.hasOpenedPicker = true;
-      openConnectionPicker(drag, point.x, point.y);
-    };
-
-    window.addEventListener("pointermove", handleConnectionPointerMove);
-    window.addEventListener("touchmove", handleConnectionPointerMove, { passive: true });
-    return () => {
-      window.removeEventListener("pointermove", handleConnectionPointerMove);
-      window.removeEventListener("touchmove", handleConnectionPointerMove);
-    };
-  }, [openConnectionPicker]);
 
   const openPaneContextMenu = useCallback(
     (event: ReactMouseEvent | globalThis.MouseEvent) => {
@@ -1405,6 +1426,7 @@ export function useWorkflowApp() {
     handleFlowInit,
     handleViewportChange,
     handleSelectionChange,
+    handlePaneClick,
     closeContextMenus,
     handleAddNode,
     runWorkflow,

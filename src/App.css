@@ -126,6 +126,25 @@
     filter: drop-shadow(0 0 6px theme("colors.accent"));
   }
 
+  .workflow-connection-menu-line {
+    position: fixed;
+    inset: 0;
+    z-index: 25;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+  }
+
+  .workflow-connection-menu-line path {
+    fill: none;
+    stroke: theme("colors.accent");
+    stroke-width: 2.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: 0.96;
+    filter: drop-shadow(0 0 6px rgba(97, 183, 255, 0.45));
+  }
+
   .react-flow__controls {
     overflow: hidden;
     border: 1px solid theme("colors.border-default");

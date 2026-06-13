@@ -47,10 +47,7 @@ function App(_props: ReadonlyAppProps) {
             onEdgeContextMenu={workflow.openEdgeContextMenu}
             onPaneContextMenu={workflow.openPaneContextMenu}
             onSelectionChange={workflow.handleSelectionChange}
-            onPaneClick={() => {
-              workflow.selectNode(null);
-              workflow.closeContextMenus();
-            }}
+            onPaneClick={workflow.handlePaneClick}
             selectionOnDrag
             selectionKeyCode={null}
             selectionMode={SelectionMode.Partial}
@@ -119,11 +116,18 @@ function App(_props: ReadonlyAppProps) {
           />
         )}
 
+        {workflow.nodePickerMenu?.connectionLine && (
+          <svg className="workflow-connection-menu-line" aria-hidden="true">
+            <path d={connectionMenuPath(workflow.nodePickerMenu.connectionLine)} />
+          </svg>
+        )}
+
         {workflow.nodePickerMenu && (
           <NodePickerMenu
             x={workflow.nodePickerMenu.x}
             y={workflow.nodePickerMenu.y}
             kinds={workflow.nodePickerMenu.candidateKinds}
+            isConnectionPicker={Boolean(workflow.nodePickerMenu.connectionOrigin)}
             onSelectNode={workflow.addNodeFromPicker}
           />
         )}
@@ -138,6 +142,16 @@ function App(_props: ReadonlyAppProps) {
       </main>
     </ReactFlowProvider>
   );
+}
+
+function connectionMenuPath(line: { fromX: number; fromY: number; toX: number; toY: number }) {
+  const controlOffset = Math.max(80, Math.abs(line.toX - line.fromX) * 0.45);
+  return [
+    `M ${line.fromX} ${line.fromY}`,
+    `C ${line.fromX + controlOffset} ${line.fromY}`,
+    `${line.toX - controlOffset} ${line.toY}`,
+    `${line.toX} ${line.toY}`,
+  ].join(" ");
 }
 
 export default App;

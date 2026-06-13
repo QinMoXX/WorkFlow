@@ -6,10 +6,11 @@ export interface ReadonlyNodePickerMenuProps {
   readonly x: number;
   readonly y: number;
   readonly kinds?: readonly WorkflowNodeKind[];
+  readonly isConnectionPicker?: boolean;
   readonly onSelectNode: (kind: WorkflowNodeKind) => void;
 }
 
-export function NodePickerMenu({ x, y, kinds, onSelectNode }: ReadonlyNodePickerMenuProps) {
+export function NodePickerMenu({ x, y, kinds, isConnectionPicker = false, onSelectNode }: ReadonlyNodePickerMenuProps) {
   const selectedRef = useRef(false);
   const templates = kinds
     ? nodeTemplates.filter((template) => kinds.includes(template.kind))
@@ -26,7 +27,10 @@ export function NodePickerMenu({ x, y, kinds, onSelectNode }: ReadonlyNodePicker
 
   return (
     <div
-      className="fixed z-30 w-64 rounded-xl border border-border-default bg-panel-raised p-2 shadow-floating"
+      className={[
+        "fixed z-30 w-64 rounded-xl border bg-panel-raised p-2 shadow-floating",
+        isConnectionPicker ? "border-accent shadow-selected" : "border-border-default",
+      ].join(" ")}
       style={{ left: x, top: y }}
       onClick={(event) => event.stopPropagation()}
     >

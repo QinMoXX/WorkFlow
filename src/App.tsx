@@ -42,11 +42,14 @@ function App(_props: ReadonlyAppProps) {
             isValidConnection={workflow.isValidConnection}
             onInit={workflow.handleFlowInit}
             onViewportChange={workflow.handleViewportChange}
+            onMoveStart={workflow.handleMoveStart}
             onNodeClick={(_, node) => workflow.selectNode(node.id)}
+            onNodeDragStart={workflow.handleSelectionStart}
             onNodeContextMenu={workflow.openImageContextMenu}
             onEdgeContextMenu={workflow.openEdgeContextMenu}
             onPaneContextMenu={workflow.openPaneContextMenu}
             onSelectionChange={workflow.handleSelectionChange}
+            onSelectionStart={workflow.handleSelectionStart}
             onPaneClick={workflow.handlePaneClick}
             selectionOnDrag
             selectionKeyCode={null}

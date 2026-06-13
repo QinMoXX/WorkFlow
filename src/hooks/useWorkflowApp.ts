@@ -239,6 +239,12 @@ export function useWorkflowApp() {
     setNodePickerMenu(null);
   }, []);
 
+  const closeConnectionPicker = useCallback(() => {
+    suppressCanvasCloseUntilRef.current = 0;
+    suppressConnectionSelectionRef.current = false;
+    setNodePickerMenu((current) => (current?.connectionOrigin ? null : current));
+  }, []);
+
   const connectionCandidateKinds = useCallback(
     (origin: ConnectionPickerOrigin) => {
       const originNode = nodes.find((node) => node.id === origin.nodeId);
@@ -579,6 +585,7 @@ export function useWorkflowApp() {
       const hasStructuralChange = changes.some((change) => change.type === "add" || change.type === "remove");
 
       if (hasPositionDragStart && !isDraggingNodesRef.current) {
+        closeConnectionPicker();
         pushHistory();
         isDraggingNodesRef.current = true;
       }
@@ -591,7 +598,7 @@ export function useWorkflowApp() {
 
       onNodesChange(changes);
     },
-    [onNodesChange, pushHistory],
+    [closeConnectionPicker, onNodesChange, pushHistory],
   );
 
   const handleEdgesChange = useCallback(
@@ -608,13 +615,23 @@ export function useWorkflowApp() {
     if (suppressConnectionSelectionRef.current) return;
     if (selectedNodes.length === 0) return;
 
+    closeConnectionPicker();
     setSelectedNodeId(selectedNodes[0].id);
-  }, []);
+  }, [closeConnectionPicker]);
 
   const selectNode = useCallback((nodeId: string | null) => {
+    closeConnectionPicker();
     suppressConnectionSelectionRef.current = false;
     setSelectedNodeId(nodeId);
-  }, []);
+  }, [closeConnectionPicker]);
+
+  const handleMoveStart = useCallback((event: MouseEvent | TouchEvent | null) => {
+    if (event) closeConnectionPicker();
+  }, [closeConnectionPicker]);
+
+  const handleSelectionStart = useCallback(() => {
+    closeConnectionPicker();
+  }, [closeConnectionPicker]);
 
   const handlePaneClick = useCallback(() => {
     if (performance.now() < suppressCanvasCloseUntilRef.current) {
@@ -1411,7 +1428,9 @@ export function useWorkflowApp() {
     isValidConnection,
     handleFlowInit,
     handleViewportChange,
+    handleMoveStart,
     handleSelectionChange,
+    handleSelectionStart,
     handlePaneClick,
     closeContextMenus,
     handleAddNode,

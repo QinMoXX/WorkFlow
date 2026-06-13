@@ -14,7 +14,6 @@ import {
 } from "@xyflow/react";
 import { WorkflowNodeCard } from "../components/WorkflowNodeCard";
 import { createNode, initialEdges, initialNodes } from "../lib/nodeCatalog";
-import { firstModelForNode } from "../lib/modelCatalog";
 import {
   connectionRules,
   fromSnapshot,
@@ -728,12 +727,6 @@ export function useWorkflowApp() {
     pushHistory();
     const nextNode = createNode(kind, nodes.length);
     if (position) nextNode.position = position;
-    if (kind === "textToImage") {
-      nextNode.data = { ...nextNode.data, model: firstModelForNode(kind) };
-    }
-    if (kind === "imageToImage") {
-      nextNode.data = { ...nextNode.data, model: firstModelForNode(kind) };
-    }
     setNodes((current) => [...current, nextNode]);
     setSelectedNodeId(nextNode.id);
     setPaneContextMenu(null);
@@ -768,13 +761,6 @@ export function useWorkflowApp() {
       pushHistory();
       const nextNode = createNode(kind, nodes.length);
       nextNode.position = { x: menu.flowX, y: menu.flowY };
-      if (kind === "textToImage") {
-        nextNode.data = { ...nextNode.data, model: firstModelForNode(kind) };
-      }
-      if (kind === "imageToImage") {
-        nextNode.data = { ...nextNode.data, model: firstModelForNode(kind) };
-      }
-
       const edge: Connection = {
         source: origin.handleType === "source" ? origin.nodeId : nextNode.id,
         sourceHandle: rule.sourceHandle,

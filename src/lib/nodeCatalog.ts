@@ -21,10 +21,10 @@ export const initialNodes: WorkflowNode[] = [
     type: "workflowNode",
     position: { x: 420, y: 96 },
     data: {
-      kind: "textToImage",
-      title: "文生图",
+      kind: "imageGeneration",
+      title: "图片生成",
       status: "idle",
-      model: firstModelForNode("textToImage"),
+      model: firstModelForNode("imageGeneration"),
       aspectRatio: "1:1",
       stylePreset: "product",
     },
@@ -70,9 +70,12 @@ export function createNode(kind: WorkflowNodeKind, index: number): WorkflowNode 
 
   if (kind === "textInput") baseData.content = "";
   if (kind === "imageInput") baseData.imagePath = "";
-  if (kind === "textToImage") {
+  if (kind === "imageGeneration" || kind === "textToImage") {
     baseData.model = firstModelForNode(kind);
     baseData.aspectRatio = "1:1";
+  }
+  if (kind === "imageGeneration") {
+    baseData.strength = 0.65;
   }
   if (kind === "imageToImage") {
     baseData.model = firstModelForNode(kind);

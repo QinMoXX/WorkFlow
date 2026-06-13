@@ -22,21 +22,14 @@ export const connectionRules: WorkflowConnectionRule[] = [
   {
     sourceKind: "textInput",
     sourceHandle: "text-out",
-    targetKind: "textToImage",
-    targetHandle: "prompt-in",
-    dataType: "text",
-  },
-  {
-    sourceKind: "textInput",
-    sourceHandle: "text-out",
-    targetKind: "imageToImage",
+    targetKind: "imageGeneration",
     targetHandle: "prompt-in",
     dataType: "text",
   },
   {
     sourceKind: "imageInput",
     sourceHandle: "image-out",
-    targetKind: "imageToImage",
+    targetKind: "imageGeneration",
     targetHandle: "image-in",
     dataType: "image",
   },
@@ -48,28 +41,14 @@ export const connectionRules: WorkflowConnectionRule[] = [
     dataType: "image",
   },
   {
-    sourceKind: "textToImage",
+    sourceKind: "imageGeneration",
     sourceHandle: "image-out",
-    targetKind: "imageToImage",
+    targetKind: "imageGeneration",
     targetHandle: "image-in",
     dataType: "image",
   },
   {
-    sourceKind: "textToImage",
-    sourceHandle: "image-out",
-    targetKind: "output",
-    targetHandle: "image-in",
-    dataType: "image",
-  },
-  {
-    sourceKind: "imageToImage",
-    sourceHandle: "image-out",
-    targetKind: "imageToImage",
-    targetHandle: "image-in",
-    dataType: "image",
-  },
-  {
-    sourceKind: "imageToImage",
+    sourceKind: "imageGeneration",
     sourceHandle: "image-out",
     targetKind: "output",
     targetHandle: "image-in",
@@ -79,7 +58,7 @@ export const connectionRules: WorkflowConnectionRule[] = [
 
 export function outputType(kind: WorkflowNodeKind): WorkflowDataType | null {
   if (kind === "textInput") return "text";
-  if (kind === "imageInput" || kind === "textToImage" || kind === "imageToImage") {
+  if (kind === "imageInput" || kind === "imageGeneration" || kind === "textToImage" || kind === "imageToImage") {
     return "image";
   }
   return null;
@@ -133,6 +112,7 @@ export function resolveConnectionRule(
 export function nodeSummary(data: WorkflowNodeData) {
   if (data.kind === "textInput") return data.content || "输入 prompt 文本";
   if (data.kind === "imageInput") return data.imagePath || "选择或粘贴图片路径";
+  if (data.kind === "imageGeneration") return data.model || "选择模型";
   if (data.kind === "textToImage") return data.model || "选择模型";
   if (data.kind === "imageToImage") return `${data.model || "选择模型"} · strength ${data.strength ?? 0.65}`;
   if (data.kind === "group") return "视觉分组，不参与执行语义";
@@ -212,13 +192,22 @@ export function fromSnapshot(snapshot: WorkflowSnapshot): {
 }
 
 function normalizeNodeData(data: WorkflowNodeData): WorkflowNodeData {
-  if (data.kind !== "textToImage" && data.kind !== "imageToImage") return data;
+  const migratedData =
+    data.kind === "textToImage" || data.kind === "imageToImage"
+      ? {
+          ...data,
+          kind: "imageGeneration" as const,
+          title: data.title === "文生图" || data.title === "图生图" ? "图片生成" : data.title,
+        }
+      : data;
 
-  const selectableModels = modelsForNode(data.kind);
-  if (selectableModels.some((model) => model.id === data.model)) return data;
+  if (migratedData.kind !== "imageGeneration") return migratedData;
+
+  const selectableModels = modelsForNode(migratedData.kind);
+  if (selectableModels.some((model) => model.id === migratedData.model)) return migratedData;
 
   return {
-    ...data,
-    model: firstModelForNode(data.kind),
+    ...migratedData,
+    model: firstModelForNode(migratedData.kind),
   };
 }

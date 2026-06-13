@@ -19,14 +19,14 @@ const statusClassNames: Record<WorkflowNode["data"]["status"], string> = {
 
 export function WorkflowNodeCard({ id, data, selected }: ReadonlyWorkflowNodeCardProps) {
   const isGroup = data.kind === "group";
-  const hasPromptInput = data.kind === "textToImage" || data.kind === "imageToImage";
-  const hasImageInput = data.kind === "imageToImage" || data.kind === "output";
+  const hasPromptInput = data.kind === "imageGeneration" || data.kind === "textToImage" || data.kind === "imageToImage";
+  const hasImageInput = data.kind === "imageGeneration" || data.kind === "imageToImage" || data.kind === "output";
   const hasInput = hasPromptInput || hasImageInput;
   const output = outputType(data.kind);
   const previewPath =
     data.kind === "imageInput"
       ? data.thumbnailPath || data.resultPath || data.imagePath
-      : data.kind === "textToImage" || data.kind === "imageToImage"
+      : data.kind === "imageGeneration" || data.kind === "textToImage" || data.kind === "imageToImage"
         ? data.resultPath
         : undefined;
   const contextImagePath =

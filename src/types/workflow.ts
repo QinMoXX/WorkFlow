@@ -5,6 +5,7 @@ export type WorkflowDataType = "text" | "image";
 export type WorkflowNodeKind =
   | "textInput"
   | "imageInput"
+  | "imageGeneration"
   | "textToImage"
   | "imageToImage"
   | "output"

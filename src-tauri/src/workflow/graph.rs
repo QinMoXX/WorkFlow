@@ -14,7 +14,7 @@ const CONNECTION_RULES: &[ConnectionRule] = &[
     ConnectionRule {
         source_kind: WorkflowNodeKind::TextInput,
         source_handle: "text-out",
-        target_kind: WorkflowNodeKind::TextToImage,
+        target_kind: WorkflowNodeKind::ImageGeneration,
         target_handle: "prompt-in",
         data_type: WorkflowDataType::Text,
     },
@@ -28,7 +28,7 @@ const CONNECTION_RULES: &[ConnectionRule] = &[
     ConnectionRule {
         source_kind: WorkflowNodeKind::ImageInput,
         source_handle: "image-out",
-        target_kind: WorkflowNodeKind::ImageToImage,
+        target_kind: WorkflowNodeKind::ImageGeneration,
         target_handle: "image-in",
         data_type: WorkflowDataType::Image,
     },
@@ -42,12 +42,26 @@ const CONNECTION_RULES: &[ConnectionRule] = &[
     ConnectionRule {
         source_kind: WorkflowNodeKind::TextToImage,
         source_handle: "image-out",
-        target_kind: WorkflowNodeKind::ImageToImage,
+        target_kind: WorkflowNodeKind::ImageGeneration,
         target_handle: "image-in",
         data_type: WorkflowDataType::Image,
     },
     ConnectionRule {
         source_kind: WorkflowNodeKind::TextToImage,
+        source_handle: "image-out",
+        target_kind: WorkflowNodeKind::Output,
+        target_handle: "image-in",
+        data_type: WorkflowDataType::Image,
+    },
+    ConnectionRule {
+        source_kind: WorkflowNodeKind::ImageGeneration,
+        source_handle: "image-out",
+        target_kind: WorkflowNodeKind::ImageGeneration,
+        target_handle: "image-in",
+        data_type: WorkflowDataType::Image,
+    },
+    ConnectionRule {
+        source_kind: WorkflowNodeKind::ImageGeneration,
         source_handle: "image-out",
         target_kind: WorkflowNodeKind::Output,
         target_handle: "image-in",

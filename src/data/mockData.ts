@@ -98,8 +98,7 @@ export const nodeCardCopy = {
 export const nodeTemplates: NodeTemplate[] = [
   { kind: "textInput", title: "文本输入", description: "提供 prompt 文本" },
   { kind: "imageInput", title: "图片输入", description: "引用本地图片路径" },
-  { kind: "textToImage", title: "文生图", description: "文本生成图片" },
-  { kind: "imageToImage", title: "图生图", description: "图片与文本编辑" },
+  { kind: "imageGeneration", title: "图片生成", description: "有图片输入时自动执行图生图" },
   { kind: "output", title: "输出", description: "自动保存上游图片" },
   { kind: "group", title: "分组", description: "整理一组节点" },
 ];

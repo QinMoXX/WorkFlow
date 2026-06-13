@@ -12,8 +12,8 @@ const NEW_API_PROVIDER_NAME: &str = "New API";
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ProviderCapability {
-    TextToImage,
-    ImageToImage,
+    #[serde(alias = "textToImage", alias = "imageToImage")]
+    ImageGeneration,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -125,30 +125,21 @@ fn model_catalog() -> Vec<ProviderModel> {
         ProviderModel {
             id: "agnes-image-2.0-flash".to_string(),
             name: "Agnes Image 2.0 Flash".to_string(),
-            capability: ProviderCapability::TextToImage,
+            capability: ProviderCapability::ImageGeneration,
         },
         ProviderModel {
             id: "gpt-image-1".to_string(),
             name: "GPT Image 1".to_string(),
-            capability: ProviderCapability::TextToImage,
-        },
-        ProviderModel {
-            id: "agnes-image-2.0-flash".to_string(),
-            name: "Agnes Image 2.0 Flash Edit".to_string(),
-            capability: ProviderCapability::ImageToImage,
-        },
-        ProviderModel {
-            id: "gpt-image-1".to_string(),
-            name: "GPT Image 1 Edit".to_string(),
-            capability: ProviderCapability::ImageToImage,
+            capability: ProviderCapability::ImageGeneration,
         },
     ]
 }
 
 fn model_whitelist_for_node(kind: WorkflowNodeKind) -> &'static [&'static str] {
     match kind {
-        WorkflowNodeKind::TextToImage => &["agnes-image-2.0-flash", "gpt-image-1"],
-        WorkflowNodeKind::ImageToImage => &["agnes-image-2.0-flash", "gpt-image-1"],
+        WorkflowNodeKind::ImageGeneration
+        | WorkflowNodeKind::TextToImage
+        | WorkflowNodeKind::ImageToImage => &["agnes-image-2.0-flash", "gpt-image-1"],
         _ => &[],
     }
 }

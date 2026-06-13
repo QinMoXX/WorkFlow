@@ -1,4 +1,4 @@
-export type ProviderCapability = "textToImage" | "imageToImage";
+export type ProviderCapability = "imageGeneration";
 
 export type ProviderModel = {
   id: string;

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub enum WorkflowNodeKind {
     TextInput,
     ImageInput,
+    ImageGeneration,
     TextToImage,
     ImageToImage,
     Output,

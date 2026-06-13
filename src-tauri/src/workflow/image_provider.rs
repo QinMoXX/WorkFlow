@@ -12,19 +12,11 @@ use serde::{Deserialize, Serialize};
 
 use super::providers::ProviderConfig;
 
-pub struct TextToImageInput {
+pub struct ImageGenerationInput {
     pub node_id: String,
     pub model: String,
     pub prompt: String,
-    pub size: Option<String>,
-    pub seed: Option<i64>,
-}
-
-pub struct ImageToImageInput {
-    pub node_id: String,
-    pub model: String,
-    pub prompt: String,
-    pub image_source: String,
+    pub image_source: Option<String>,
     pub size: Option<String>,
     pub seed: Option<i64>,
 }
@@ -35,8 +27,7 @@ pub struct ImageResult {
 }
 
 pub trait ImageProvider {
-    fn text_to_image(&self, input: TextToImageInput) -> Result<ImageResult, String>;
-    fn image_to_image(&self, input: ImageToImageInput) -> Result<ImageResult, String>;
+    fn generate_image(&self, input: ImageGenerationInput) -> Result<ImageResult, String>;
 }
 
 pub struct OpenAiCompatibleImageProvider<'a> {
@@ -258,7 +249,8 @@ impl<'a> OpenAiCompatibleImageProvider<'a> {
 }
 
 impl ImageProvider for OpenAiCompatibleImageProvider<'_> {
-    fn text_to_image(&self, input: TextToImageInput) -> Result<ImageResult, String> {
+    fn generate_image(&self, input: ImageGenerationInput) -> Result<ImageResult, String> {
+        let has_image = input.image_source.is_some();
         self.create_image(
             &input.node_id,
             ImageGenerationRequest {
@@ -266,26 +258,9 @@ impl ImageProvider for OpenAiCompatibleImageProvider<'_> {
                 prompt: input.prompt,
                 size: input.size,
                 seed: input.seed,
-                tags: None,
+                tags: has_image.then(|| vec!["img2img".to_string()]),
                 extra_body: Some(ImageGenerationExtraBody {
-                    image: None,
-                    response_format: Some("url".to_string()),
-                }),
-            },
-        )
-    }
-
-    fn image_to_image(&self, input: ImageToImageInput) -> Result<ImageResult, String> {
-        self.create_image(
-            &input.node_id,
-            ImageGenerationRequest {
-                model: input.model,
-                prompt: input.prompt,
-                size: input.size,
-                seed: input.seed,
-                tags: Some(vec!["img2img".to_string()]),
-                extra_body: Some(ImageGenerationExtraBody {
-                    image: Some(vec![input.image_source]),
+                    image: input.image_source.map(|image| vec![image]),
                     response_format: Some("url".to_string()),
                 }),
             },

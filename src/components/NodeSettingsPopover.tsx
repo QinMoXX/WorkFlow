@@ -132,7 +132,7 @@ export function NodeSettingsPopover({
             </div>
           )}
 
-          {(data.kind === "textToImage" || data.kind === "imageToImage") && (
+          {(data.kind === "imageGeneration" || data.kind === "textToImage" || data.kind === "imageToImage") && (
             <textarea
               className={`${inputClassName} min-h-24 resize-none`}
               value={data.promptOverride ?? ""}
@@ -152,7 +152,7 @@ export function NodeSettingsPopover({
         </div>
 
         <footer className="mt-5 flex flex-wrap items-center gap-3 border-t border-border-subtle pt-3 text-sm text-text-secondary">
-          {(data.kind === "textToImage" || data.kind === "imageToImage") && (
+          {(data.kind === "imageGeneration" || data.kind === "textToImage" || data.kind === "imageToImage") && (
             <>
               <label className={footerSelectClassName}>
                 <Sparkles className="shrink-0" size={16} />
@@ -186,7 +186,7 @@ export function NodeSettingsPopover({
             </>
           )}
 
-          {data.kind === "imageToImage" && (
+          {(data.kind === "imageGeneration" || data.kind === "imageToImage") && (
             <label className="flex items-center gap-2">
               {propertyPanelCopy.strength}
               <input

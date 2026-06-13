@@ -10,9 +10,7 @@ use tauri::{AppHandle, Emitter};
 
 use super::{
     commands::RunControlState,
-    image_provider::{
-        ImageProvider, ImageToImageInput, OpenAiCompatibleImageProvider, TextToImageInput,
-    },
+    image_provider::{ImageGenerationInput, ImageProvider, OpenAiCompatibleImageProvider},
     models::{
         RunError, RunFinishedEvent, RunLogEvent, RunNodeEvent, RunNodeMetrics, RunNodeOutput,
         RunNodeSnapshot, RunResponse, RunStartedEvent, RunSummary, WorkflowDataType,
@@ -415,40 +413,14 @@ fn execute_node(
             snapshot.nodes[node_index].data.result_path = Some(image_path);
             Ok(format!("{} 输出图片路径", node.data.title))
         }
-        WorkflowNodeKind::TextToImage => {
+        WorkflowNodeKind::ImageGeneration
+        | WorkflowNodeKind::TextToImage
+        | WorkflowNodeKind::ImageToImage => {
             let provider = resolve_ai_node_provider(
                 provider,
                 node.data.model.as_deref(),
-                ProviderCapability::TextToImage,
-                WorkflowNodeKind::TextToImage,
-            )?;
-            let prompt = connected_text(snapshot, &node.id).or(node.data.prompt_override);
-            let prompt = prompt.unwrap_or_default();
-            if prompt.trim().is_empty() {
-                return Err("缺少 prompt 输入".to_string());
-            }
-            let model = node.data.model.clone().unwrap_or_default();
-            let image_provider = OpenAiCompatibleImageProvider::new(provider, generated_dir)?;
-            let result = image_provider.text_to_image(TextToImageInput {
-                node_id: node.id,
-                model: model.clone(),
-                prompt,
-                size: size_from_aspect_ratio(node.data.aspect_ratio.as_deref()),
-                seed: parse_seed(node.data.seed.as_deref())?,
-            })?;
-            snapshot.nodes[node_index].data.result_path = Some(result.local_path.clone());
-            snapshot.nodes[node_index].data.result_url = Some(result.remote_url);
-            Ok(format!(
-                "{} 通过 {} / {} 生成图片：{}",
-                node.data.title, provider.name, model, result.local_path
-            ))
-        }
-        WorkflowNodeKind::ImageToImage => {
-            let provider = resolve_ai_node_provider(
-                provider,
-                node.data.model.as_deref(),
-                ProviderCapability::ImageToImage,
-                WorkflowNodeKind::ImageToImage,
+                ProviderCapability::ImageGeneration,
+                node.kind,
             )?;
             let prompt = connected_text(snapshot, &node.id).or(node.data.prompt_override);
             let prompt = prompt.unwrap_or_default();
@@ -458,7 +430,7 @@ fn execute_node(
             let image_source = connected_image_source(snapshot, &node.id)?;
             let model = node.data.model.clone().unwrap_or_default();
             let image_provider = OpenAiCompatibleImageProvider::new(provider, generated_dir)?;
-            let result = image_provider.image_to_image(ImageToImageInput {
+            let result = image_provider.generate_image(ImageGenerationInput {
                 node_id: node.id,
                 model: model.clone(),
                 prompt,
@@ -539,7 +511,10 @@ fn copy_output_image(
     Ok(destination.to_string_lossy().to_string())
 }
 
-fn connected_image_source(snapshot: &WorkflowSnapshot, target_id: &str) -> Result<String, String> {
+fn connected_image_source(
+    snapshot: &WorkflowSnapshot,
+    target_id: &str,
+) -> Result<Option<String>, String> {
     let image = snapshot
         .edges
         .iter()
@@ -553,9 +528,10 @@ fn connected_image_source(snapshot: &WorkflowSnapshot, target_id: &str) -> Resul
                 .or_else(|| node.data.image_path.clone())
                 .or_else(|| node.data.last_output_path.clone())
         })
-        .ok_or_else(|| "缺少图片输入".to_string())?;
+        .map(|image| image_to_api_source(&image))
+        .transpose()?;
 
-    image_to_api_source(&image)
+    Ok(image)
 }
 
 fn image_to_api_source(image: &str) -> Result<String, String> {
@@ -799,6 +775,7 @@ fn node_output(snapshot: &WorkflowSnapshot, node_index: usize) -> Option<RunNode
     let data_type = match node.kind {
         WorkflowNodeKind::TextInput => Some(WorkflowDataType::Text),
         WorkflowNodeKind::ImageInput
+        | WorkflowNodeKind::ImageGeneration
         | WorkflowNodeKind::TextToImage
         | WorkflowNodeKind::ImageToImage => Some(WorkflowDataType::Image),
         WorkflowNodeKind::Output => Some(WorkflowDataType::Image),
@@ -840,7 +817,9 @@ fn reusable_node_output(snapshot: &WorkflowSnapshot, node_index: usize) -> Optio
             .or(node.data.image_path.as_deref())
             .filter(|image| reusable_image_source(image))
             .map(|image| image.to_string()),
-        WorkflowNodeKind::TextToImage | WorkflowNodeKind::ImageToImage => node
+        WorkflowNodeKind::ImageGeneration
+        | WorkflowNodeKind::TextToImage
+        | WorkflowNodeKind::ImageToImage => node
             .data
             .result_url
             .as_deref()

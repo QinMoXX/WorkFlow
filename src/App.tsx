@@ -37,6 +37,8 @@ function App(_props: ReadonlyAppProps) {
             onNodesChange={workflow.handleNodesChange}
             onEdgesChange={workflow.handleEdgesChange}
             onConnect={workflow.handleConnect}
+            onConnectStart={workflow.handleConnectStart}
+            onConnectEnd={workflow.handleConnectEnd}
             isValidConnection={workflow.isValidConnection}
             onInit={workflow.handleFlowInit}
             onViewportChange={workflow.handleViewportChange}
@@ -121,6 +123,7 @@ function App(_props: ReadonlyAppProps) {
           <NodePickerMenu
             x={workflow.nodePickerMenu.x}
             y={workflow.nodePickerMenu.y}
+            kinds={workflow.nodePickerMenu.candidateKinds}
             onSelectNode={workflow.addNodeFromPicker}
           />
         )}

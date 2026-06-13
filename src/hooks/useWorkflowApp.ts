@@ -15,7 +15,13 @@ import {
 import { WorkflowNodeCard } from "../components/WorkflowNodeCard";
 import { createNode, initialEdges, initialNodes } from "../lib/nodeCatalog";
 import { firstModelForNode } from "../lib/modelCatalog";
-import { fromSnapshot, resolveConnectionRule, toPersistableSnapshot, toSnapshot } from "../lib/workflowGraph";
+import {
+  connectionRules,
+  fromSnapshot,
+  resolveConnectionRule,
+  toPersistableSnapshot,
+  toSnapshot,
+} from "../lib/workflowGraph";
 import { ApiConfig } from "../types/provider";
 import {
   RunResponse,
@@ -54,7 +60,24 @@ type PaneContextMenu = {
   flowY: number;
 };
 
-type NodePickerMenu = PaneContextMenu;
+type ConnectionHandleType = "source" | "target";
+
+type ConnectionPickerOrigin = {
+  nodeId: string;
+  handleId: string;
+  handleType: ConnectionHandleType;
+};
+
+type NodePickerMenu = PaneContextMenu & {
+  candidateKinds?: WorkflowNodeKind[];
+  connectionOrigin?: ConnectionPickerOrigin;
+};
+
+type ActiveConnectionDrag = ConnectionPickerOrigin & {
+  startX: number;
+  startY: number;
+  hasOpenedPicker: boolean;
+};
 
 type ClipboardGraph = {
   nodes: WorkflowNode[];
@@ -80,6 +103,7 @@ type WorkspaceUiState = {
 const ACTIVE_NODE_STATUSES = new Set(["queued", "running"]);
 const WORKSPACE_UI_STATE_KEY = "workflow.workspace.ui-state";
 const NODE_SETTINGS_POPOVER_DELAY_MS = 240;
+const CONNECTION_PICKER_THRESHOLD_PX = 120;
 
 function readWorkspaceUiState(): WorkspaceUiState {
   try {
@@ -147,6 +171,8 @@ export function useWorkflowApp() {
   const clipboardRef = useRef<ClipboardGraph | null>(null);
   const toastSequenceRef = useRef(0);
   const latestViewportRef = useRef<Viewport | undefined>(initialUiStateRef.current.viewport);
+  const activeConnectionDragRef = useRef<ActiveConnectionDrag | null>(null);
+  const suppressConnectionSelectionRef = useRef(false);
 
   const nodeTypes = useMemo(() => ({ workflowNode: WorkflowNodeCard }), []);
   const selectedNode = useMemo(
@@ -192,11 +218,61 @@ export function useWorkflowApp() {
   }, []);
 
   const closeContextMenus = useCallback(() => {
+    suppressConnectionSelectionRef.current = false;
+    if (nodeSettingsDelayRef.current !== null) {
+      window.clearTimeout(nodeSettingsDelayRef.current);
+      nodeSettingsDelayRef.current = null;
+    }
+    setNodeSettingsNodeId(null);
     setNodeContextMenu(null);
     setEdgeContextMenu(null);
     setPaneContextMenu(null);
     setNodePickerMenu(null);
   }, []);
+
+  const connectionCandidateKinds = useCallback(
+    (origin: ConnectionPickerOrigin) => {
+      const originNode = nodes.find((node) => node.id === origin.nodeId);
+      if (!originNode) return [];
+
+      const candidateKinds = connectionRules
+        .filter((rule) =>
+          origin.handleType === "source"
+            ? rule.sourceKind === originNode.data.kind && rule.sourceHandle === origin.handleId
+            : rule.targetKind === originNode.data.kind && rule.targetHandle === origin.handleId,
+        )
+        .map((rule) => (origin.handleType === "source" ? rule.targetKind : rule.sourceKind));
+
+      return Array.from(new Set(candidateKinds));
+    },
+    [nodes],
+  );
+
+  const openConnectionPicker = useCallback(
+    (origin: ConnectionPickerOrigin, clientX: number, clientY: number) => {
+      const candidateKinds = connectionCandidateKinds(origin);
+      if (candidateKinds.length === 0) return;
+
+      const position = flowInstance
+        ? flowInstance.screenToFlowPosition({ x: clientX, y: clientY })
+        : { x: clientX, y: clientY };
+
+      setSelectedNodeId(null);
+      setNodeSettingsNodeId(null);
+      setNodeContextMenu(null);
+      setEdgeContextMenu(null);
+      setPaneContextMenu(null);
+      setNodePickerMenu({
+        x: clientX,
+        y: clientY,
+        flowX: position.x,
+        flowY: position.y,
+        candidateKinds,
+        connectionOrigin: origin,
+      });
+    },
+    [connectionCandidateKinds, flowInstance],
+  );
 
   useEffect(() => {
     if (nodeSettingsDelayRef.current !== null) {
@@ -509,9 +585,15 @@ export function useWorkflowApp() {
   );
 
   const handleSelectionChange = useCallback(({ nodes: selectedNodes }: { nodes: WorkflowNode[] }) => {
+    if (suppressConnectionSelectionRef.current) return;
     if (selectedNodes.length === 0) return;
 
     setSelectedNodeId(selectedNodes[0].id);
+  }, []);
+
+  const selectNode = useCallback((nodeId: string | null) => {
+    suppressConnectionSelectionRef.current = false;
+    setSelectedNodeId(nodeId);
   }, []);
 
   const handleConnect = useCallback(
@@ -539,6 +621,7 @@ export function useWorkflowApp() {
       }
 
       pushHistory();
+      setNodePickerMenu(null);
       setEdges((current) =>
         addEdge(
           {
@@ -555,7 +638,49 @@ export function useWorkflowApp() {
     [appendLogs, nodes, pushHistory, setEdges],
   );
 
+  const handleConnectStart = useCallback(
+    (
+      event: MouseEvent | TouchEvent,
+      params: { nodeId: string | null; handleId: string | null; handleType: ConnectionHandleType | null },
+    ) => {
+      const point = clientPointFromEvent(event);
+      if (!point || !params.nodeId || !params.handleId || !params.handleType) {
+        activeConnectionDragRef.current = null;
+        return;
+      }
+
+      activeConnectionDragRef.current = {
+        nodeId: params.nodeId,
+        handleId: params.handleId,
+        handleType: params.handleType,
+        startX: point.x,
+        startY: point.y,
+        hasOpenedPicker: false,
+      };
+      suppressConnectionSelectionRef.current = true;
+      if (nodeSettingsDelayRef.current !== null) {
+        window.clearTimeout(nodeSettingsDelayRef.current);
+        nodeSettingsDelayRef.current = null;
+      }
+      setNodeSettingsNodeId(null);
+      setNodePickerMenu(null);
+      setPaneContextMenu(null);
+    },
+    [],
+  );
+
+  const handleConnectEnd = useCallback(() => {
+    const hadConnectionPicker = activeConnectionDragRef.current?.hasOpenedPicker ?? false;
+    activeConnectionDragRef.current = null;
+    if (!hadConnectionPicker) {
+      window.setTimeout(() => {
+        suppressConnectionSelectionRef.current = false;
+      }, 120);
+    }
+  }, []);
+
   const handleAddNode = (kind: WorkflowNodeKind, position?: { x: number; y: number }) => {
+    suppressConnectionSelectionRef.current = false;
     pushHistory();
     const nextNode = createNode(kind, nodes.length);
     if (position) nextNode.position = position;
@@ -571,12 +696,101 @@ export function useWorkflowApp() {
     setNodePickerMenu(null);
   };
 
+  const addConnectedNodeFromPicker = useCallback(
+    (kind: WorkflowNodeKind, menu: NodePickerMenu) => {
+      if (!menu.connectionOrigin) return false;
+
+      const origin = menu.connectionOrigin;
+      const originNode = nodes.find((node) => node.id === origin.nodeId);
+      if (!originNode) return false;
+
+      const rule =
+        origin.handleType === "source"
+          ? connectionRules.find(
+              (item) =>
+                item.sourceKind === originNode.data.kind &&
+                item.sourceHandle === origin.handleId &&
+                item.targetKind === kind,
+            )
+          : connectionRules.find(
+              (item) =>
+                item.sourceKind === kind &&
+                item.targetKind === originNode.data.kind &&
+                item.targetHandle === origin.handleId,
+            );
+
+      if (!rule) return false;
+
+      pushHistory();
+      const nextNode = createNode(kind, nodes.length);
+      nextNode.position = { x: menu.flowX, y: menu.flowY };
+      if (kind === "textToImage") {
+        nextNode.data = { ...nextNode.data, model: firstModelForNode(kind) };
+      }
+      if (kind === "imageToImage") {
+        nextNode.data = { ...nextNode.data, model: firstModelForNode(kind) };
+      }
+
+      const edge: Connection = {
+        source: origin.handleType === "source" ? origin.nodeId : nextNode.id,
+        sourceHandle: rule.sourceHandle,
+        target: origin.handleType === "source" ? nextNode.id : origin.nodeId,
+        targetHandle: rule.targetHandle,
+      };
+
+      setNodes((current) => [...current, nextNode]);
+      setEdges((current) =>
+        addEdge(
+          {
+            ...edge,
+            id: `${edge.source}-${rule.sourceHandle}-${edge.target}-${rule.targetHandle}`,
+            data: { dataType: rule.dataType },
+          },
+          current,
+        ),
+      );
+      setSelectedNodeId(nextNode.id);
+      setNodePickerMenu(null);
+      setNodeSettingsNodeId(null);
+      window.setTimeout(() => {
+        suppressConnectionSelectionRef.current = false;
+      }, 320);
+      appendLogs([`已添加并连接节点：${nextNode.data.title}`]);
+      return true;
+    },
+    [appendLogs, nodes, pushHistory, setEdges, setNodes],
+  );
+
+  useEffect(() => {
+    const handleConnectionPointerMove = (event: PointerEvent | TouchEvent) => {
+      const drag = activeConnectionDragRef.current;
+      if (!drag || drag.hasOpenedPicker) return;
+
+      const point = clientPointFromEvent(event);
+      if (!point) return;
+
+      const distance = Math.hypot(point.x - drag.startX, point.y - drag.startY);
+      if (distance < CONNECTION_PICKER_THRESHOLD_PX) return;
+
+      drag.hasOpenedPicker = true;
+      openConnectionPicker(drag, point.x, point.y);
+    };
+
+    window.addEventListener("pointermove", handleConnectionPointerMove);
+    window.addEventListener("touchmove", handleConnectionPointerMove, { passive: true });
+    return () => {
+      window.removeEventListener("pointermove", handleConnectionPointerMove);
+      window.removeEventListener("touchmove", handleConnectionPointerMove);
+    };
+  }, [openConnectionPicker]);
+
   const openPaneContextMenu = useCallback(
     (event: ReactMouseEvent | globalThis.MouseEvent) => {
       event.preventDefault();
       const position = flowInstance
         ? flowInstance.screenToFlowPosition({ x: event.clientX, y: event.clientY })
         : { x: event.clientX, y: event.clientY };
+      suppressConnectionSelectionRef.current = false;
       setSelectedNodeId(null);
       setNodeContextMenu(null);
       setEdgeContextMenu(null);
@@ -599,10 +813,12 @@ export function useWorkflowApp() {
 
   const addNodeFromPicker = useCallback(
     (kind: WorkflowNodeKind) => {
+      if (nodePickerMenu?.connectionOrigin && addConnectedNodeFromPicker(kind, nodePickerMenu)) return;
+
       const position = nodePickerMenu ? { x: nodePickerMenu.flowX, y: nodePickerMenu.flowY } : undefined;
       handleAddNode(kind, position);
     },
-    [handleAddNode, nodePickerMenu],
+    [addConnectedNodeFromPicker, handleAddNode, nodePickerMenu],
   );
 
   const updateSelectedNode = (patch: Partial<WorkflowNodeData>) => {
@@ -1183,6 +1399,8 @@ export function useWorkflowApp() {
     handleNodesChange,
     handleEdgesChange,
     handleConnect,
+    handleConnectStart,
+    handleConnectEnd,
     isValidConnection,
     handleFlowInit,
     handleViewportChange,
@@ -1208,7 +1426,7 @@ export function useWorkflowApp() {
     deleteContextEdge,
     openSettings: () => setIsSettingsOpen(true),
     closeSettings: () => setIsSettingsOpen(false),
-    selectNode: setSelectedNodeId,
+    selectNode,
     runNode,
     fitSelected,
     fitAll,
@@ -1222,6 +1440,15 @@ function isEditableElement(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
   return ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+}
+
+function clientPointFromEvent(event: MouseEvent | PointerEvent | TouchEvent) {
+  if ("touches" in event) {
+    const touch = event.touches[0] ?? event.changedTouches[0];
+    return touch ? { x: touch.clientX, y: touch.clientY } : null;
+  }
+
+  return { x: event.clientX, y: event.clientY };
 }
 
 function readFileAsDataUrl(file: File) {

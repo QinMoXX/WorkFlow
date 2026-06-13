@@ -161,7 +161,6 @@ export function NodeSettingsPopover({
                   value={data.model ?? ""}
                   onChange={(event) => onChange({ model: event.target.value })}
                 >
-                  <option value="">{propertyPanelCopy.model}</option>
                   {selectableModels.map((model) => (
                     <option key={model.id} value={model.id}>
                       {model.name || model.id}

@@ -123,11 +123,6 @@ pub fn resolve_ai_node_provider<'a>(
 fn model_catalog() -> Vec<ProviderModel> {
     vec![
         ProviderModel {
-            id: "agnes-2.0-flash".to_string(),
-            name: "Agnes 2.0 Flash".to_string(),
-            capability: ProviderCapability::TextToImage,
-        },
-        ProviderModel {
             id: "agnes-image-2.0-flash".to_string(),
             name: "Agnes Image 2.0 Flash".to_string(),
             capability: ProviderCapability::TextToImage,
@@ -136,11 +131,6 @@ fn model_catalog() -> Vec<ProviderModel> {
             id: "gpt-image-1".to_string(),
             name: "GPT Image 1".to_string(),
             capability: ProviderCapability::TextToImage,
-        },
-        ProviderModel {
-            id: "agnes-2.0-flash".to_string(),
-            name: "Agnes 2.0 Flash Edit".to_string(),
-            capability: ProviderCapability::ImageToImage,
         },
         ProviderModel {
             id: "agnes-image-2.0-flash".to_string(),
@@ -157,12 +147,8 @@ fn model_catalog() -> Vec<ProviderModel> {
 
 fn model_whitelist_for_node(kind: WorkflowNodeKind) -> &'static [&'static str] {
     match kind {
-        WorkflowNodeKind::TextToImage => {
-            &["agnes-2.0-flash", "agnes-image-2.0-flash", "gpt-image-1"]
-        }
-        WorkflowNodeKind::ImageToImage => {
-            &["agnes-2.0-flash", "agnes-image-2.0-flash", "gpt-image-1"]
-        }
+        WorkflowNodeKind::TextToImage => &["agnes-image-2.0-flash", "gpt-image-1"],
+        WorkflowNodeKind::ImageToImage => &["agnes-image-2.0-flash", "gpt-image-1"],
         _ => &[],
     }
 }

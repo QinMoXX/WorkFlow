@@ -6,6 +6,7 @@ import {
   WorkflowNodeKind,
   WorkflowSnapshot,
 } from "../types/workflow";
+import { firstModelForNode, modelsForNode } from "./modelCatalog";
 
 export type WorkflowHandleId = "text-out" | "image-out" | "prompt-in" | "image-in";
 
@@ -197,7 +198,7 @@ export function fromSnapshot(snapshot: WorkflowSnapshot): {
               height: node.data.groupHeight ?? 320,
             }
           : undefined,
-      data: node.data,
+      data: normalizeNodeData(node.data),
     })),
     edges: snapshot.edges.map((edge) => ({
       id: edge.id,
@@ -207,5 +208,17 @@ export function fromSnapshot(snapshot: WorkflowSnapshot): {
       targetHandle: edge.targetHandle,
       data: { dataType: edge.dataType },
     })),
+  };
+}
+
+function normalizeNodeData(data: WorkflowNodeData): WorkflowNodeData {
+  if (data.kind !== "textToImage" && data.kind !== "imageToImage") return data;
+
+  const selectableModels = modelsForNode(data.kind);
+  if (selectableModels.some((model) => model.id === data.model)) return data;
+
+  return {
+    ...data,
+    model: firstModelForNode(data.kind),
   };
 }

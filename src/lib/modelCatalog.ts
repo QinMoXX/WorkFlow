@@ -7,13 +7,24 @@ export const modelCatalog: Record<ProviderCapability, ProviderModel[]> = {
   imageGeneration: [
     { id: "agnes-image-2.0-flash", name: "Agnes Image 2.0 Flash", capability: "imageGeneration" },
     { id: "gpt-image-1", name: "GPT Image 1", capability: "imageGeneration" },
+    { id: "qwen-image-2.0-pro", name: "Qwen Image 2.0 Pro", capability: "imageGeneration" },
+    { id: "qwen-image-2.0", name: "Qwen Image 2.0", capability: "imageGeneration" },
+    { id: "qwen-image-max", name: "Qwen Image Max", capability: "imageGeneration" },
   ],
 };
 
+const imageGenerationModelIds = [
+  "agnes-image-2.0-flash",
+  "gpt-image-1",
+  "qwen-image-2.0-pro",
+  "qwen-image-2.0",
+  "qwen-image-max",
+];
+
 export const modelWhitelistByNodeKind: Partial<Record<WorkflowNodeKind, string[]>> = {
-  imageGeneration: ["agnes-image-2.0-flash", "gpt-image-1"],
-  textToImage: ["agnes-image-2.0-flash", "gpt-image-1"],
-  imageToImage: ["agnes-image-2.0-flash", "gpt-image-1"],
+  imageGeneration: imageGenerationModelIds,
+  textToImage: imageGenerationModelIds,
+  imageToImage: imageGenerationModelIds,
 };
 
 export function modelCapabilityForNode(kind: string): ProviderCapability | null {

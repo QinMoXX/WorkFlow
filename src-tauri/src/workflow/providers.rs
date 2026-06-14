@@ -132,6 +132,21 @@ fn model_catalog() -> Vec<ProviderModel> {
             name: "GPT Image 1".to_string(),
             capability: ProviderCapability::ImageGeneration,
         },
+        ProviderModel {
+            id: "qwen-image-2.0-pro".to_string(),
+            name: "Qwen Image 2.0 Pro".to_string(),
+            capability: ProviderCapability::ImageGeneration,
+        },
+        ProviderModel {
+            id: "qwen-image-2.0".to_string(),
+            name: "Qwen Image 2.0".to_string(),
+            capability: ProviderCapability::ImageGeneration,
+        },
+        ProviderModel {
+            id: "qwen-image-max".to_string(),
+            name: "Qwen Image Max".to_string(),
+            capability: ProviderCapability::ImageGeneration,
+        },
     ]
 }
 
@@ -139,7 +154,13 @@ fn model_whitelist_for_node(kind: WorkflowNodeKind) -> &'static [&'static str] {
     match kind {
         WorkflowNodeKind::ImageGeneration
         | WorkflowNodeKind::TextToImage
-        | WorkflowNodeKind::ImageToImage => &["agnes-image-2.0-flash", "gpt-image-1"],
+        | WorkflowNodeKind::ImageToImage => &[
+            "agnes-image-2.0-flash",
+            "gpt-image-1",
+            "qwen-image-2.0-pro",
+            "qwen-image-2.0",
+            "qwen-image-max",
+        ],
         _ => &[],
     }
 }

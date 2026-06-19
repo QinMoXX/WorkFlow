@@ -21,10 +21,15 @@ const imageGenerationModelIds = [
   "qwen-image-max",
 ];
 
+const imageEditModelIds = [
+  "qwen-image-2.0-pro",
+  "qwen-image-2.0",
+];
+
 export const modelWhitelistByNodeKind: Partial<Record<WorkflowNodeKind, string[]>> = {
   imageGeneration: imageGenerationModelIds,
   textToImage: imageGenerationModelIds,
-  imageToImage: imageGenerationModelIds,
+  imageToImage: imageEditModelIds,
 };
 
 export function modelCapabilityForNode(kind: string): ProviderCapability | null {

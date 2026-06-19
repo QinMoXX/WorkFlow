@@ -152,15 +152,14 @@ fn model_catalog() -> Vec<ProviderModel> {
 
 fn model_whitelist_for_node(kind: WorkflowNodeKind) -> &'static [&'static str] {
     match kind {
-        WorkflowNodeKind::ImageGeneration
-        | WorkflowNodeKind::TextToImage
-        | WorkflowNodeKind::ImageToImage => &[
+        WorkflowNodeKind::ImageGeneration | WorkflowNodeKind::TextToImage => &[
             "agnes-image-2.0-flash",
             "gpt-image-1",
             "qwen-image-2.0-pro",
             "qwen-image-2.0",
             "qwen-image-max",
         ],
+        WorkflowNodeKind::ImageToImage => &["qwen-image-2.0-pro", "qwen-image-2.0"],
         _ => &[],
     }
 }

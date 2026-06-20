@@ -25,7 +25,6 @@ export interface SidebarTab {
 }
 
 export const appCopy = {
-  projectName: "未命名项目",
   settingsKicker: "设置",
   settingsTitle: "AI 配置",
 };
@@ -44,7 +43,6 @@ export const workspaceSidebarCopy = {
   chooseAssetRoot: "选择资源根目录",
   resetAssetRoot: "恢复默认资源根目录",
   defaultAssetRoot: "默认应用数据目录",
-  canvasFallbackName: "未命名画布",
   allFilter: "全部",
   emptyCanvasTitle: "暂无画布",
   emptyCanvasDescription: "点击加号创建新画布。",

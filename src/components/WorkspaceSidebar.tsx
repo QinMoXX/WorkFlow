@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import {
-  ChevronDown,
   FileText,
   FolderCog,
   FolderOpen,
@@ -15,7 +14,7 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
-import { appCopy, workspaceSidebarCopy, workspaceSidebarTabs } from "../data/mockData";
+import { workspaceSidebarCopy, workspaceSidebarTabs } from "../data/mockData";
 import { WorkflowCanvas, WorkflowNode } from "../types/workflow";
 
 export interface SidebarAsset {
@@ -84,7 +83,6 @@ export function WorkspaceSidebar({
   const [activeTab, setActiveTab] = useState<SidebarTabId>("canvases");
   const [canvasContextMenu, setCanvasContextMenu] = useState<CanvasContextMenu | null>(null);
   const assets = useMemo(() => collectAssets(nodes), [nodes]);
-  const activeCanvas = canvases.find((canvas) => canvas.id === activeCanvasId);
 
   useEffect(() => {
     if (!canvasContextMenu) return undefined;
@@ -116,29 +114,15 @@ export function WorkspaceSidebar({
 
   return (
     <aside className="flex min-h-0 flex-col border-r border-border-subtle bg-panel text-text-primary">
-      <header className="border-b border-border-subtle px-4 py-5">
-        <div className="mb-5 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <div className="h-5 w-8 -skew-x-12 border-4 border-text-primary" aria-hidden="true" />
-            <ChevronDown size={16} className="text-text-secondary" />
-          </div>
-          <button
-            className="grid h-8 w-8 place-items-center rounded-md text-text-secondary transition hover:bg-control hover:text-text-primary"
-            type="button"
-            onClick={onCollapse}
-            title={workspaceSidebarCopy.collapseSidebar}
-          >
-            <PanelLeftClose size={17} />
-          </button>
-        </div>
-        <div className="flex items-center gap-2 text-sm font-bold">
-          <span>{appCopy.projectName}</span>
-          <span className="text-text-muted">|</span>
-          <button className="inline-flex items-center gap-1 text-text-primary" type="button">
-            {activeCanvas?.name ?? workspaceSidebarCopy.canvasFallbackName}
-            <ChevronDown size={14} />
-          </button>
-        </div>
+      <header className="flex justify-end border-b border-border-subtle px-4 py-4">
+        <button
+          className="grid h-8 w-8 place-items-center rounded-md text-text-secondary transition hover:bg-control hover:text-text-primary"
+          type="button"
+          onClick={onCollapse}
+          title={workspaceSidebarCopy.collapseSidebar}
+        >
+          <PanelLeftClose size={17} />
+        </button>
       </header>
 
       <div className="flex items-center justify-between border-b border-border-subtle px-2 py-3">
@@ -242,7 +226,6 @@ export function WorkspaceSidebar({
               <div className="flex items-center gap-3 text-sm text-text-primary">
                 <button className="inline-flex items-center gap-1" type="button">
                   {workspaceSidebarCopy.allFilter}
-                  <ChevronDown size={14} />
                 </button>
                 <Search size={18} className="text-text-secondary" />
               </div>

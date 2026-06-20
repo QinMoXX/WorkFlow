@@ -1,11 +1,10 @@
-import { Bot, Crosshair, Maximize2, Save, Workflow } from "lucide-react";
+import { Bot, Crosshair, Maximize2, Workflow } from "lucide-react";
 import { canvasToolbarActions } from "../data/mockData";
 
 export interface ReadonlyCanvasToolbarProps {
   readonly onFitSelected: () => void;
   readonly onFitAll: () => void;
   readonly onAutoLayout: () => void;
-  readonly onSave: () => void;
   readonly onOpenSettings: () => void;
 }
 
@@ -13,7 +12,6 @@ const handlers = {
   fitSelected: "onFitSelected",
   fitAll: "onFitAll",
   autoLayout: "onAutoLayout",
-  save: "onSave",
   settings: "onOpenSettings",
 } as const;
 
@@ -21,7 +19,6 @@ const icons = {
   fitSelected: Crosshair,
   fitAll: Maximize2,
   autoLayout: Workflow,
-  save: Save,
   settings: Bot,
 } as const;
 

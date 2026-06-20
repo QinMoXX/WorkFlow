@@ -133,7 +133,6 @@ export const canvasToolbarActions: ToolbarAction[] = [
   { id: "fitSelected", label: "定位", shortcut: "F" },
   { id: "fitAll", label: "全景" },
   { id: "autoLayout", label: "自动布局", shortcut: "L" },
-  { id: "save", label: "保存", shortcut: "Ctrl S" },
   { id: "settings", label: "API Key" },
 ];
 

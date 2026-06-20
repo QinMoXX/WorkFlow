@@ -106,6 +106,7 @@ type WorkspaceUiState = {
 
 const ACTIVE_NODE_STATUSES = new Set(["queued", "running"]);
 const WORKSPACE_UI_STATE_KEY = "workflow.workspace.ui-state";
+const AUTO_SAVE_DELAY_MS = 700;
 const NODE_SETTINGS_POPOVER_DELAY_MS = 240;
 const CONNECTION_PICKER_MIN_DISTANCE_PX = 80;
 
@@ -164,6 +165,7 @@ export function useWorkflowApp() {
   const [apiConfig, setApiConfig] = useState<ApiConfig>({ apiKey: "" });
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<WorkflowNode, WorkflowEdge> | null>(null);
   const [activeRun, setActiveRun] = useState<ActiveRunState | null>(null);
+  const [isWorkflowLoaded, setIsWorkflowLoaded] = useState(false);
   const activeRunIdRef = useRef<string | null>(null);
   const runRequestTokenRef = useRef(0);
   const latestRunSequenceByRunIdRef = useRef(new Map<string, number>());
@@ -178,6 +180,9 @@ export function useWorkflowApp() {
   const activeConnectionDragRef = useRef<ActiveConnectionDrag | null>(null);
   const suppressConnectionSelectionRef = useRef(false);
   const suppressCanvasCloseUntilRef = useRef(0);
+  const lastPersistedSnapshotSignatureRef = useRef<string | null>(null);
+  const pendingAutoSaveRef = useRef<{ snapshot: WorkflowSnapshot; signature: string } | null>(null);
+  const isAutoSavingRef = useRef(false);
 
   const nodeTypes = useMemo(() => ({ workflowNode: WorkflowNodeCard }), []);
   const selectedNode = useMemo(
@@ -378,7 +383,8 @@ export function useWorkflowApp() {
           appendLogs(["已恢复上次工作流"]);
         }
       })
-      .catch((error) => appendLogs([`加载失败：${String(error)}`]));
+      .catch((error) => appendLogs([`加载失败：${String(error)}`]))
+      .finally(() => setIsWorkflowLoaded(true));
   }, [appendLogs, applySnapshot]);
 
   useEffect(() => {
@@ -855,14 +861,53 @@ export function useWorkflowApp() {
     );
   };
 
-  const saveWorkflow = async () => {
-    try {
-      await invoke("save_workflow", { snapshot: toPersistableSnapshot(nodes, edges) });
-      appendLogs(["已保存当前工作流"]);
-    } catch (error) {
-      appendLogs([`保存失败：${String(error)}`]);
+  const saveSnapshot = useCallback(
+    async (snapshot: WorkflowSnapshot, signature: string) => {
+      if (isAutoSavingRef.current) {
+        pendingAutoSaveRef.current = { snapshot, signature };
+        return;
+      }
+
+      isAutoSavingRef.current = true;
+      let nextSave: { snapshot: WorkflowSnapshot; signature: string } | null = { snapshot, signature };
+
+      while (nextSave) {
+        pendingAutoSaveRef.current = null;
+        try {
+          await invoke("save_workflow", { snapshot: nextSave.snapshot });
+          lastPersistedSnapshotSignatureRef.current = nextSave.signature;
+        } catch (error) {
+          appendLogs([`自动保存失败：${String(error)}`]);
+          break;
+        }
+
+        const pendingSave = pendingAutoSaveRef.current as { snapshot: WorkflowSnapshot; signature: string } | null;
+        nextSave = pendingSave?.signature === lastPersistedSnapshotSignatureRef.current ? null : pendingSave;
+      }
+
+      isAutoSavingRef.current = false;
+    },
+    [appendLogs],
+  );
+
+  useEffect(() => {
+    if (!isWorkflowLoaded) return undefined;
+
+    const snapshot = toPersistableSnapshot(nodes, edges);
+    const signature = JSON.stringify(snapshot);
+
+    if (lastPersistedSnapshotSignatureRef.current === null) {
+      lastPersistedSnapshotSignatureRef.current = signature;
+      return undefined;
     }
-  };
+    if (signature === lastPersistedSnapshotSignatureRef.current) return undefined;
+
+    const timeoutId = window.setTimeout(() => {
+      void saveSnapshot(snapshot, signature);
+    }, AUTO_SAVE_DELAY_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [edges, isWorkflowLoaded, nodes, saveSnapshot]);
 
   const saveApiConfig = async (nextConfig: ApiConfig) => {
     try {
@@ -1338,11 +1383,6 @@ export function useWorkflowApp() {
         groupSelectedItems();
         return;
       }
-      if (mod && key === "s") {
-        event.preventDefault();
-        void saveWorkflow();
-        return;
-      }
       if (key === "f") {
         event.preventDefault();
         fitSelected();
@@ -1436,7 +1476,6 @@ export function useWorkflowApp() {
     handleAddNode,
     runWorkflow,
     cancelActiveRun,
-    saveWorkflow,
     updateSelectedNode,
     importImageToSelectedNode,
     saveApiConfig,
@@ -1533,4 +1572,3 @@ function defaultImageFileName(imagePath: string) {
   if (name && name.includes(".")) return name;
   return "workflow-image.png";
 }
-

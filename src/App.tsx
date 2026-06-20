@@ -27,7 +27,6 @@ function App(_props: ReadonlyAppProps) {
             onFitSelected={workflow.fitSelected}
             onFitAll={workflow.fitAll}
             onAutoLayout={workflow.autoLayout}
-            onSave={workflow.saveWorkflow}
             onOpenSettings={workflow.openSettings}
           />
           <ReactFlow<WorkflowNode, WorkflowEdge>

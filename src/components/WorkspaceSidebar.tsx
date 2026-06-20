@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   FileText,
   FolderCog,
@@ -15,6 +14,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { workspaceSidebarCopy, workspaceSidebarTabs } from "../data/mockData";
+import { toImageSource } from "../lib/imageSource";
 import { WorkflowCanvas, WorkflowNode } from "../types/workflow";
 
 export interface SidebarAsset {
@@ -45,11 +45,6 @@ type CanvasContextMenu = {
   x: number;
   y: number;
 };
-
-function toImageSource(path: string) {
-  if (path.startsWith("http://") || path.startsWith("https://")) return path;
-  return convertFileSrc(path);
-}
 
 function collectAssets(nodes: WorkflowNode[]): SidebarAsset[] {
   return nodes.flatMap((node) => {
@@ -173,7 +168,7 @@ export function WorkspaceSidebar({
                     <button
                       key={canvas.id}
                       className={[
-                        "flex min-w-0 items-center gap-3 rounded-lg border px-3 py-3 text-left transition",
+                        "flex min-w-0 items-center gap-2 rounded-md border px-3 py-2 text-left transition",
                         isActive
                           ? "border-text-primary bg-control-hover text-text-primary"
                           : "border-border-subtle bg-control/30 text-text-secondary hover:border-border-default hover:text-text-primary",
@@ -182,11 +177,8 @@ export function WorkspaceSidebar({
                       onClick={() => onSwitchCanvas(canvas.id)}
                       onContextMenu={(event) => openCanvasContextMenu(event, canvas.id)}
                     >
-                      <LayoutGrid size={16} className="flex-none" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-bold">{canvas.name}</span>
-                        <span className="block truncate text-xs text-text-muted">{canvas.assetDirName}</span>
-                      </span>
+                      <LayoutGrid size={15} className="flex-none" />
+                      <span className="min-w-0 flex-1 truncate text-sm font-bold">{canvas.name}</span>
                     </button>
                   );
                 })}

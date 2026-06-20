@@ -1,13 +1,8 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { toImageSource } from "../lib/imageSource";
 
 export interface ReadonlyNodeImagePreviewProps {
   readonly path?: string;
   readonly label: string;
-}
-
-function toImageSource(path: string) {
-  if (path.startsWith("http://") || path.startsWith("https://")) return path;
-  return convertFileSrc(path);
 }
 
 export function NodeImagePreview({ path, label }: ReadonlyNodeImagePreviewProps) {

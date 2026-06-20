@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { Background, MiniMap, ReactFlow, ReactFlowProvider, SelectionMode } from "@xyflow/react";
+import { PanelLeftOpen } from "lucide-react";
 import "@xyflow/react/dist/style.css";
 import { AiSettingsPanel } from "./components/AiSettingsPanel";
 import { CanvasToolbar } from "./components/CanvasToolbar";
@@ -16,11 +18,45 @@ export interface ReadonlyAppProps {}
 
 function App(_props: ReadonlyAppProps) {
   const workflow = useWorkflowApp();
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   return (
     <ReactFlowProvider>
-      <main className="grid h-screen w-screen grid-cols-[344px_minmax(0,1fr)] overflow-hidden bg-app text-text-primary max-[1180px]:grid-cols-[300px_minmax(0,1fr)]">
-        <WorkspaceSidebar nodes={workflow.nodes} />
+      <main
+        className={[
+          "grid h-screen w-screen overflow-hidden bg-app text-text-primary",
+          isSidebarCollapsed
+            ? "grid-cols-[minmax(0,1fr)]"
+            : "grid-cols-[344px_minmax(0,1fr)] max-[1180px]:grid-cols-[300px_minmax(0,1fr)]",
+        ].join(" ")}
+      >
+        {!isSidebarCollapsed && (
+          <WorkspaceSidebar
+            nodes={workflow.nodes}
+            canvases={workflow.canvases}
+            activeCanvasId={workflow.activeCanvasId}
+            assetRootDir={workflow.assetRootDir}
+            onCollapse={() => setIsSidebarCollapsed(true)}
+            onCreateCanvas={workflow.createCanvas}
+            onSwitchCanvas={workflow.switchCanvas}
+            onChooseAssetRootDir={workflow.chooseAssetRootDir}
+            onResetAssetRootDir={workflow.resetAssetRootDir}
+            onRenameCanvas={workflow.renameCanvas}
+            onDeleteCanvas={workflow.deleteCanvas}
+            onOpenCanvasAssetDir={workflow.openCanvasAssetDir}
+          />
+        )}
+
+        {isSidebarCollapsed && (
+          <button
+            className="fixed left-4 top-4 z-40 grid h-11 w-11 place-items-center rounded-lg border border-border-default bg-panel-raised text-text-primary shadow-floating transition hover:bg-control-hover"
+            type="button"
+            onClick={() => setIsSidebarCollapsed(false)}
+            title="展开侧边栏"
+          >
+            <PanelLeftOpen size={19} />
+          </button>
+        )}
 
         <section className="workflow-canvas relative min-h-0 min-w-0" onClick={workflow.closeContextMenus}>
           <CanvasToolbar

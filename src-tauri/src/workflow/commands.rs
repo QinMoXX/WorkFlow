@@ -16,14 +16,18 @@ use tauri::{AppHandle, State};
 use super::{
     executor::run_nodes,
     graph::{execution_order_for_node, topological_order, validate_connections},
-    models::{ImportedImage, RunResponse, WorkflowSnapshot},
+    models::{ImportedImage, RunResponse, WorkflowProject, WorkflowSnapshot},
     providers::{
         load_api_config as load_api_config_value, load_runtime_provider,
         save_api_config as save_api_config_value, ApiConfig,
     },
     storage::{
-        load_workflow_snapshot, save_image_as_path, save_imported_data_url, save_workflow_snapshot,
-        show_path_in_folder,
+        delete_canvas_assets_dir as delete_canvas_assets_dir_value,
+        load_workflow_project as load_workflow_project_value, load_workflow_snapshot,
+        open_canvas_assets_dir as open_canvas_assets_dir_value,
+        rename_canvas_assets_dir as rename_canvas_assets_dir_value, save_image_as_path,
+        save_imported_data_url, save_workflow_project as save_workflow_project_value,
+        save_workflow_snapshot, show_path_in_folder,
     },
 };
 
@@ -69,6 +73,44 @@ pub fn load_workflow(app: AppHandle) -> Result<Option<WorkflowSnapshot>, String>
 }
 
 #[tauri::command]
+pub fn save_workflow_project(app: AppHandle, project: WorkflowProject) -> Result<(), String> {
+    save_workflow_project_value(&app, &project)
+}
+
+#[tauri::command]
+pub fn load_workflow_project(app: AppHandle) -> Result<WorkflowProject, String> {
+    load_workflow_project_value(&app)
+}
+
+#[tauri::command]
+pub fn rename_canvas_assets_dir(
+    app: AppHandle,
+    project: WorkflowProject,
+    canvas_id: String,
+    next_name: String,
+) -> Result<String, String> {
+    rename_canvas_assets_dir_value(&app, &project, &canvas_id, &next_name)
+}
+
+#[tauri::command]
+pub fn delete_canvas_assets_dir(
+    app: AppHandle,
+    project: WorkflowProject,
+    canvas_id: String,
+) -> Result<(), String> {
+    delete_canvas_assets_dir_value(&app, &project, &canvas_id)
+}
+
+#[tauri::command]
+pub fn open_canvas_assets_dir(
+    app: AppHandle,
+    project: WorkflowProject,
+    canvas_id: String,
+) -> Result<(), String> {
+    open_canvas_assets_dir_value(&app, &project, &canvas_id)
+}
+
+#[tauri::command]
 pub fn debug_frontend_logs(messages: Vec<String>) {
     #[cfg(debug_assertions)]
     for message in messages {
@@ -82,19 +124,21 @@ pub fn debug_frontend_logs(messages: Vec<String>) {
 #[tauri::command]
 pub fn import_image_data_url(
     app: AppHandle,
+    canvas_id: String,
     data_url: String,
     thumbnail_data_url: Option<String>,
 ) -> Result<ImportedImage, String> {
-    save_imported_data_url(&app, &data_url, thumbnail_data_url.as_deref())
+    save_imported_data_url(&app, &canvas_id, &data_url, thumbnail_data_url.as_deref())
 }
 
 #[tauri::command]
 pub fn import_clipboard_image(
     app: AppHandle,
+    canvas_id: String,
     data_url: String,
     thumbnail_data_url: Option<String>,
 ) -> Result<ImportedImage, String> {
-    save_imported_data_url(&app, &data_url, thumbnail_data_url.as_deref())
+    save_imported_data_url(&app, &canvas_id, &data_url, thumbnail_data_url.as_deref())
 }
 
 #[tauri::command]
@@ -155,6 +199,7 @@ pub fn cancel_run(state: State<'_, RunControlState>, run_id: String) -> Result<(
 pub async fn run_node(
     app: AppHandle,
     state: State<'_, RunControlState>,
+    canvas_id: String,
     snapshot: WorkflowSnapshot,
     node_id: String,
 ) -> Result<RunResponse, String> {
@@ -167,6 +212,7 @@ pub async fn run_node(
         let execution_order = execution_order_for_node(&snapshot, &node_id)?;
         run_nodes(
             &app,
+            &canvas_id,
             &provider,
             &mut snapshot,
             execution_order,
@@ -184,6 +230,7 @@ pub async fn run_node(
 pub async fn run_workflow(
     app: AppHandle,
     state: State<'_, RunControlState>,
+    canvas_id: String,
     snapshot: WorkflowSnapshot,
 ) -> Result<RunResponse, String> {
     let run_id = create_run_id();
@@ -195,6 +242,7 @@ pub async fn run_workflow(
         let execution_order = topological_order(&snapshot)?;
         run_nodes(
             &app,
+            &canvas_id,
             &provider,
             &mut snapshot,
             execution_order,

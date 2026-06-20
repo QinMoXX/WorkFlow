@@ -81,6 +81,24 @@ pub struct WorkflowSnapshot {
     pub edges: Vec<WorkflowEdge>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowCanvas {
+    pub id: String,
+    pub name: String,
+    pub asset_dir_name: String,
+    pub snapshot: WorkflowSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowProject {
+    pub active_canvas_id: String,
+    #[serde(default)]
+    pub asset_root_dir: Option<String>,
+    pub canvases: Vec<WorkflowCanvas>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct RunResponse {
     pub snapshot: WorkflowSnapshot,

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { save } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   Connection,
   EdgeChange,
@@ -31,9 +31,11 @@ import {
   RunNodeEvent,
   RunStartedEvent,
   WorkflowEdge,
+  WorkflowCanvas,
   WorkflowNode,
   WorkflowNodeData,
   WorkflowNodeKind,
+  WorkflowProject,
   WorkflowSnapshot,
 } from "../types/workflow";
 
@@ -86,6 +88,11 @@ type ActiveConnectionDrag = ConnectionPickerOrigin & {
 type ClipboardGraph = {
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
+};
+
+type ProjectSaveRequest = {
+  project: WorkflowProject;
+  signature: string;
 };
 
 type ActiveRunState = {
@@ -165,7 +172,8 @@ export function useWorkflowApp() {
   const [apiConfig, setApiConfig] = useState<ApiConfig>({ apiKey: "" });
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<WorkflowNode, WorkflowEdge> | null>(null);
   const [activeRun, setActiveRun] = useState<ActiveRunState | null>(null);
-  const [isWorkflowLoaded, setIsWorkflowLoaded] = useState(false);
+  const [project, setProject] = useState<WorkflowProject | null>(null);
+  const [isProjectLoaded, setIsProjectLoaded] = useState(false);
   const activeRunIdRef = useRef<string | null>(null);
   const runRequestTokenRef = useRef(0);
   const latestRunSequenceByRunIdRef = useRef(new Map<string, number>());
@@ -180,11 +188,16 @@ export function useWorkflowApp() {
   const activeConnectionDragRef = useRef<ActiveConnectionDrag | null>(null);
   const suppressConnectionSelectionRef = useRef(false);
   const suppressCanvasCloseUntilRef = useRef(0);
-  const lastPersistedSnapshotSignatureRef = useRef<string | null>(null);
-  const pendingAutoSaveRef = useRef<{ snapshot: WorkflowSnapshot; signature: string } | null>(null);
+  const lastPersistedProjectSignatureRef = useRef<string | null>(null);
+  const pendingAutoSaveRef = useRef<ProjectSaveRequest | null>(null);
   const isAutoSavingRef = useRef(false);
 
   const nodeTypes = useMemo(() => ({ workflowNode: WorkflowNodeCard }), []);
+  const activeCanvas = useMemo(
+    () => project?.canvases.find((canvas) => canvas.id === project.activeCanvasId) ?? null,
+    [project],
+  );
+  const activeCanvasId = activeCanvas?.id ?? "";
   const selectedNode = useMemo(
     () => nodes.find((node) => node.id === selectedNodeId) ?? null,
     [nodes, selectedNodeId],
@@ -376,15 +389,17 @@ export function useWorkflowApp() {
   );
 
   useEffect(() => {
-    invoke<WorkflowSnapshot | null>("load_workflow")
-      .then((snapshot) => {
-        if (snapshot) {
-          applySnapshot(snapshot);
-          appendLogs(["已恢复上次工作流"]);
-        }
+    invoke<WorkflowProject>("load_workflow_project")
+      .then((loadedProject) => {
+        const nextProject = normalizeProject(loadedProject);
+        const canvas = currentCanvas(nextProject);
+        setProject(nextProject);
+        applySnapshot(canvas.snapshot);
+        lastPersistedProjectSignatureRef.current = projectSignature(nextProject);
+        appendLogs(["已恢复上次项目"]);
       })
       .catch((error) => appendLogs([`加载失败：${String(error)}`]))
-      .finally(() => setIsWorkflowLoaded(true));
+      .finally(() => setIsProjectLoaded(true));
   }, [appendLogs, applySnapshot]);
 
   useEffect(() => {
@@ -471,11 +486,12 @@ export function useWorkflowApp() {
         .find((item) => item.kind === "file" && item.type.startsWith("image/"))
         ?.getAsFile();
       if (!imageFile) return;
+      if (!activeCanvasId) return;
 
       event.preventDefault();
 
       try {
-        const imported = await importImageFileData("import_clipboard_image", imageFile);
+        const imported = await importImageFileData("import_clipboard_image", activeCanvasId, imageFile);
         const node = createNode("imageInput", nodes.length);
         const position = flowInstance
           ? flowInstance.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 })
@@ -500,7 +516,7 @@ export function useWorkflowApp() {
 
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
-  }, [appendLogs, flowInstance, nodes.length, setNodes]);
+  }, [activeCanvasId, appendLogs, flowInstance, nodes.length, setNodes]);
 
   useEffect(() => {
     const handleImageContextMenu = (event: Event) => {
@@ -531,9 +547,9 @@ export function useWorkflowApp() {
 
   const importImageToSelectedNode = useCallback(
     async (file: File) => {
-      if (!selectedNodeId) return;
+      if (!selectedNodeId || !activeCanvasId) return;
       try {
-        const imported = await importImageFileData("import_image_data_url", file);
+        const imported = await importImageFileData("import_image_data_url", activeCanvasId, file);
         setNodes((current) =>
           current.map((node) =>
             node.id === selectedNodeId
@@ -555,7 +571,7 @@ export function useWorkflowApp() {
         appendLogs([`导入本地图片失败：${String(error)}`]);
       }
     },
-    [appendLogs, selectedNodeId, setNodes],
+    [activeCanvasId, appendLogs, selectedNodeId, setNodes],
   );
 
   const pushHistory = useCallback(() => {
@@ -861,28 +877,28 @@ export function useWorkflowApp() {
     );
   };
 
-  const saveSnapshot = useCallback(
-    async (snapshot: WorkflowSnapshot, signature: string) => {
+  const saveProject = useCallback(
+    async (project: WorkflowProject, signature: string) => {
       if (isAutoSavingRef.current) {
-        pendingAutoSaveRef.current = { snapshot, signature };
+        pendingAutoSaveRef.current = { project, signature };
         return;
       }
 
       isAutoSavingRef.current = true;
-      let nextSave: { snapshot: WorkflowSnapshot; signature: string } | null = { snapshot, signature };
+      let nextSave: ProjectSaveRequest | null = { project, signature };
 
       while (nextSave) {
         pendingAutoSaveRef.current = null;
         try {
-          await invoke("save_workflow", { snapshot: nextSave.snapshot });
-          lastPersistedSnapshotSignatureRef.current = nextSave.signature;
+          await invoke("save_workflow_project", { project: nextSave.project });
+          lastPersistedProjectSignatureRef.current = nextSave.signature;
         } catch (error) {
           appendLogs([`自动保存失败：${String(error)}`]);
           break;
         }
 
-        const pendingSave = pendingAutoSaveRef.current as { snapshot: WorkflowSnapshot; signature: string } | null;
-        nextSave = pendingSave?.signature === lastPersistedSnapshotSignatureRef.current ? null : pendingSave;
+        const pendingSave = pendingAutoSaveRef.current as ProjectSaveRequest | null;
+        nextSave = pendingSave?.signature === lastPersistedProjectSignatureRef.current ? null : pendingSave;
       }
 
       isAutoSavingRef.current = false;
@@ -891,23 +907,24 @@ export function useWorkflowApp() {
   );
 
   useEffect(() => {
-    if (!isWorkflowLoaded) return undefined;
+    if (!isProjectLoaded || !project) return undefined;
 
     const snapshot = toPersistableSnapshot(nodes, edges);
-    const signature = JSON.stringify(snapshot);
+    const nextProject = withCanvasSnapshot(project, project.activeCanvasId, snapshot);
+    const signature = projectSignature(nextProject);
 
-    if (lastPersistedSnapshotSignatureRef.current === null) {
-      lastPersistedSnapshotSignatureRef.current = signature;
+    if (lastPersistedProjectSignatureRef.current === null) {
+      lastPersistedProjectSignatureRef.current = signature;
       return undefined;
     }
-    if (signature === lastPersistedSnapshotSignatureRef.current) return undefined;
+    if (signature === lastPersistedProjectSignatureRef.current) return undefined;
 
     const timeoutId = window.setTimeout(() => {
-      void saveSnapshot(snapshot, signature);
+      void saveProject(nextProject, signature);
     }, AUTO_SAVE_DELAY_MS);
 
     return () => window.clearTimeout(timeoutId);
-  }, [edges, isWorkflowLoaded, nodes, saveSnapshot]);
+  }, [edges, isProjectLoaded, nodes, project, saveProject]);
 
   const saveApiConfig = async (nextConfig: ApiConfig) => {
     try {
@@ -946,6 +963,7 @@ export function useWorkflowApp() {
   };
 
   const runNode = async (nodeId: string) => {
+    if (!activeCanvasId) return;
     if (activeRun) {
       appendLogs(["已有节点正在运行，请等待结束或先打断当前运行"]);
       return;
@@ -961,6 +979,7 @@ export function useWorkflowApp() {
     );
     try {
       const response = await invoke<RunResponse>("run_node", {
+        canvasId: activeCanvasId,
         snapshot: toSnapshot(nodes, edges),
         nodeId,
       });
@@ -983,6 +1002,7 @@ export function useWorkflowApp() {
   };
 
   const runWorkflow = async () => {
+    if (!activeCanvasId) return;
     if (activeRun) {
       const shouldCancel = window.confirm("当前已有节点正在运行。要先打断当前运行吗？");
       if (shouldCancel) {
@@ -999,6 +1019,7 @@ export function useWorkflowApp() {
     );
     try {
       const response = await invoke<RunResponse>("run_workflow", {
+        canvasId: activeCanvasId,
         snapshot: toSnapshot(nodes, edges),
       });
       if (requestToken !== runRequestTokenRef.current) return;
@@ -1443,7 +1464,185 @@ export function useWorkflowApp() {
     [nodes],
   );
 
+  const createCanvas = useCallback(() => {
+    if (activeRun || !project) {
+      if (activeRun) appendLogs(["运行中不能切换或创建画布"]);
+      return;
+    }
+
+    const currentSnapshot = toPersistableSnapshot(nodes, edges);
+    const baseProject = withCanvasSnapshot(project, project.activeCanvasId, currentSnapshot);
+    const nextCanvas = createBlankCanvas(baseProject.canvases.length + 1);
+    const nextProject = {
+      ...baseProject,
+      activeCanvasId: nextCanvas.id,
+      canvases: [...baseProject.canvases, nextCanvas],
+    };
+
+    historyPastRef.current = [];
+    historyFutureRef.current = [];
+    setProject(nextProject);
+    applySnapshot(nextCanvas.snapshot);
+    appendLogs([`已创建画布：${nextCanvas.name}`]);
+  }, [activeRun, appendLogs, applySnapshot, edges, nodes, project]);
+
+  const switchCanvas = useCallback(
+    (canvasId: string) => {
+      if (!project || canvasId === project.activeCanvasId) return;
+      if (activeRun) {
+        appendLogs(["运行中不能切换画布"]);
+        return;
+      }
+
+      const currentSnapshot = toPersistableSnapshot(nodes, edges);
+      const baseProject = withCanvasSnapshot(project, project.activeCanvasId, currentSnapshot);
+      const targetCanvas = baseProject.canvases.find((canvas) => canvas.id === canvasId);
+      if (!targetCanvas) return;
+
+      historyPastRef.current = [];
+      historyFutureRef.current = [];
+      setProject({ ...baseProject, activeCanvasId: canvasId });
+      applySnapshot(targetCanvas.snapshot);
+      closeContextMenus();
+      appendLogs([`已切换到画布：${targetCanvas.name}`]);
+    },
+    [activeRun, appendLogs, applySnapshot, closeContextMenus, edges, nodes, project],
+  );
+
+  const chooseAssetRootDir = useCallback(async () => {
+    if (!project) return;
+    const selected = await open({ directory: true, multiple: false });
+    if (typeof selected !== "string") return;
+
+    const currentSnapshot = toPersistableSnapshot(nodes, edges);
+    const nextProject = {
+      ...withCanvasSnapshot(project, project.activeCanvasId, currentSnapshot),
+      assetRootDir: selected,
+    };
+    setProject(nextProject);
+    appendLogs([`已设置画布资源根目录：${selected}`]);
+  }, [appendLogs, edges, nodes, project]);
+
+  const resetAssetRootDir = useCallback(() => {
+    if (!project) return;
+    const currentSnapshot = toPersistableSnapshot(nodes, edges);
+    setProject({
+      ...withCanvasSnapshot(project, project.activeCanvasId, currentSnapshot),
+      assetRootDir: null,
+    });
+    appendLogs(["已恢复默认画布资源根目录"]);
+  }, [appendLogs, edges, nodes, project]);
+
+  const renameCanvas = useCallback(
+    async (canvasId: string) => {
+      if (!project) return;
+      const canvas = project.canvases.find((item) => item.id === canvasId);
+      if (!canvas) return;
+
+      const nextName = window.prompt("重命名画布", canvas.name)?.trim();
+      if (!nextName || nextName === canvas.name) return;
+
+      const currentSnapshot = toPersistableSnapshot(nodes, edges);
+      const baseProject = withCanvasSnapshot(project, project.activeCanvasId, currentSnapshot);
+
+      try {
+        const assetDirName = await invoke<string>("rename_canvas_assets_dir", {
+          project: baseProject,
+          canvasId,
+          nextName,
+        });
+        setProject({
+          ...baseProject,
+          canvases: baseProject.canvases.map((item) =>
+            item.id === canvasId
+              ? {
+                  ...item,
+                  name: nextName,
+                  assetDirName,
+                }
+              : item,
+          ),
+        });
+        appendLogs([`已重命名画布：${nextName}`]);
+      } catch (error) {
+        appendLogs([`重命名画布失败：${String(error)}`]);
+      }
+    },
+    [appendLogs, edges, nodes, project],
+  );
+
+  const deleteCanvas = useCallback(
+    async (canvasId: string) => {
+      if (!project) return;
+      const canvas = project.canvases.find((item) => item.id === canvasId);
+      if (!canvas) return;
+      if (project.canvases.length <= 1) {
+        appendLogs(["至少保留一个画布"]);
+        return;
+      }
+
+      const shouldDeleteAssets = window.confirm(
+        "需要同时删除目录资源？\n确定：删除画布并删除对应目录资源。\n取消：只删除画布，保留目录资源。",
+      );
+      const currentSnapshot = toPersistableSnapshot(nodes, edges);
+      const baseProject = withCanvasSnapshot(project, project.activeCanvasId, currentSnapshot);
+
+      try {
+        if (shouldDeleteAssets) {
+          await invoke("delete_canvas_assets_dir", {
+            project: baseProject,
+            canvasId,
+          });
+        }
+
+        const nextCanvases = baseProject.canvases.filter((item) => item.id !== canvasId);
+        const nextActiveCanvasId =
+          baseProject.activeCanvasId === canvasId ? nextCanvases[0].id : baseProject.activeCanvasId;
+        const nextCanvas = nextCanvases.find((item) => item.id === nextActiveCanvasId) ?? nextCanvases[0];
+        const nextProject = {
+          ...baseProject,
+          activeCanvasId: nextActiveCanvasId,
+          canvases: nextCanvases,
+        };
+
+        historyPastRef.current = [];
+        historyFutureRef.current = [];
+        setProject(nextProject);
+        if (baseProject.activeCanvasId === canvasId) {
+          applySnapshot(nextCanvas.snapshot);
+        }
+        appendLogs([`已删除画布：${canvas.name}`]);
+      } catch (error) {
+        appendLogs([`删除画布失败：${String(error)}`]);
+      }
+    },
+    [appendLogs, applySnapshot, edges, nodes, project],
+  );
+
+  const openCanvasAssetDir = useCallback(
+    async (canvasId: string) => {
+      if (!project) return;
+      const currentSnapshot = toPersistableSnapshot(nodes, edges);
+      const baseProject = withCanvasSnapshot(project, project.activeCanvasId, currentSnapshot);
+
+      try {
+        await invoke("open_canvas_assets_dir", {
+          project: baseProject,
+          canvasId,
+        });
+      } catch (error) {
+        appendLogs([`打开画布目录失败：${String(error)}`]);
+      }
+    },
+    [appendLogs, edges, nodes, project],
+  );
+
   return {
+    project,
+    canvases: project?.canvases ?? [],
+    activeCanvas,
+    activeCanvasId,
+    assetRootDir: project?.assetRootDir ?? null,
     nodes,
     edges,
     nodeTypes,
@@ -1497,6 +1696,13 @@ export function useWorkflowApp() {
     fitSelected,
     fitAll,
     autoLayout,
+    createCanvas,
+    switchCanvas,
+    chooseAssetRootDir,
+    resetAssetRootDir,
+    renameCanvas,
+    deleteCanvas,
+    openCanvasAssetDir,
     hasSavedViewport: Boolean(initialUiStateRef.current.viewport),
   };
 }
@@ -1526,10 +1732,10 @@ function readFileAsDataUrl(file: File) {
   });
 }
 
-async function importImageFileData(commandName: string, file: File) {
+async function importImageFileData(commandName: string, canvasId: string, file: File) {
   const dataUrl = await readFileAsDataUrl(file);
   const thumbnailDataUrl = await createThumbnailDataUrl(file);
-  return invoke<ImportedImage>(commandName, { dataUrl, thumbnailDataUrl });
+  return invoke<ImportedImage>(commandName, { canvasId, dataUrl, thumbnailDataUrl });
 }
 
 function nodeResultImagePath(data: WorkflowNodeData) {
@@ -1571,4 +1777,72 @@ function defaultImageFileName(imagePath: string) {
   const name = imagePath.split(/[\\/]/).pop();
   if (name && name.includes(".")) return name;
   return "workflow-image.png";
+}
+
+function projectSignature(project: WorkflowProject) {
+  return JSON.stringify(project);
+}
+
+function currentCanvas(project: WorkflowProject): WorkflowCanvas {
+  return project.canvases.find((canvas) => canvas.id === project.activeCanvasId) ?? project.canvases[0] ?? createBlankCanvas(1);
+}
+
+function normalizeProject(project: WorkflowProject): WorkflowProject {
+  if (project.canvases.length === 0) {
+    const canvas = createBlankCanvas(1);
+    return {
+      activeCanvasId: canvas.id,
+      assetRootDir: project.assetRootDir ?? null,
+      canvases: [canvas],
+    };
+  }
+
+  const canvases = project.canvases.map((canvas, index) => ({
+    ...canvas,
+    id: canvas.id || `canvas-${index + 1}`,
+    name: canvas.name || `画布 ${index + 1}`,
+    assetDirName: canvas.assetDirName || canvas.id || `canvas-${index + 1}`,
+    snapshot: canvas.snapshot ?? { nodes: [], edges: [] },
+  }));
+  const activeCanvasId = canvases.some((canvas) => canvas.id === project.activeCanvasId)
+    ? project.activeCanvasId
+    : canvases[0].id;
+
+  return {
+    activeCanvasId,
+    assetRootDir: project.assetRootDir ?? null,
+    canvases,
+  };
+}
+
+function withCanvasSnapshot(
+  project: WorkflowProject,
+  canvasId: string,
+  snapshot: WorkflowSnapshot,
+): WorkflowProject {
+  return {
+    ...project,
+    canvases: project.canvases.map((canvas) =>
+      canvas.id === canvasId
+        ? {
+            ...canvas,
+            snapshot,
+          }
+        : canvas,
+    ),
+  };
+}
+
+function createBlankCanvas(index: number): WorkflowCanvas {
+  const createdAt = Date.now();
+  const id = `canvas-${createdAt}`;
+  return {
+    id,
+    name: `画布 ${index}`,
+    assetDirName: id,
+    snapshot: {
+      nodes: [],
+      edges: [],
+    },
+  };
 }

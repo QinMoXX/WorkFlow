@@ -26,7 +26,6 @@ export interface SidebarTab {
 
 export const appCopy = {
   projectName: "未命名项目",
-  currentCanvasName: "画布 1",
   settingsKicker: "设置",
   settingsTitle: "AI 配置",
 };
@@ -36,9 +35,19 @@ export const workspaceSidebarCopy = {
   assetsTab: "资产",
   canvasListTitle: "画布列表",
   assetsListTitle: "画布资产",
+  assetRootTitle: "资源根目录",
+  createCanvas: "新建画布",
+  collapseSidebar: "折叠侧边栏",
+  renameCanvas: "重命名",
+  deleteCanvas: "删除",
+  openCanvasDir: "打开目录",
+  chooseAssetRoot: "选择资源根目录",
+  resetAssetRoot: "恢复默认资源根目录",
+  defaultAssetRoot: "默认应用数据目录",
+  canvasFallbackName: "未命名画布",
   allFilter: "全部",
   emptyCanvasTitle: "暂无画布",
-  emptyCanvasDescription: "未来支持多画布后会在这里显示画布列表。",
+  emptyCanvasDescription: "点击加号创建新画布。",
   emptyAssetsTitle: "暂无资产",
   emptyAssetsDescription: "画布中使用到的图片资产会显示在这里。",
   nodeCountSuffix: "节点",

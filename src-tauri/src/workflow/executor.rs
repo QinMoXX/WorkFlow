@@ -17,11 +17,12 @@ use super::{
         WorkflowNodeKind, WorkflowSnapshot,
     },
     providers::{resolve_ai_node_provider, ProviderCapability, ProviderConfig},
-    storage::generated_assets_dir,
+    storage::{generated_assets_dir, output_assets_dir},
 };
 
 pub fn run_nodes(
     app: &AppHandle,
+    canvas_id: &str,
     provider: &ProviderConfig,
     snapshot: &mut WorkflowSnapshot,
     execution_order: Vec<String>,
@@ -35,11 +36,19 @@ pub fn run_nodes(
     let mut failed_nodes = HashSet::new();
     let started_at = timestamp();
     let run_timer = Instant::now();
-    let generated_dir = generated_assets_dir(app)?;
+    let generated_dir = generated_assets_dir(app, canvas_id)?;
+    let output_dir = output_assets_dir(app, canvas_id)?;
     fs::create_dir_all(&generated_dir).map_err(|error| {
         format!(
             "创建生成图片目录失败：{}；原因：{}",
             generated_dir.display(),
+            error
+        )
+    })?;
+    fs::create_dir_all(&output_dir).map_err(|error| {
+        format!(
+            "创建输出图片目录失败：{}；原因：{}",
+            output_dir.display(),
             error
         )
     })?;
@@ -188,7 +197,7 @@ pub fn run_nodes(
             )),
         );
 
-        match execute_node(snapshot, index, &generated_dir, provider) {
+        match execute_node(snapshot, index, &generated_dir, &output_dir, provider) {
             Ok(log) => {
                 if run_control.is_cancelled(&run_id) {
                     let message = "运行已打断，当前节点结果已忽略".to_string();
@@ -391,6 +400,7 @@ fn execute_node(
     snapshot: &mut WorkflowSnapshot,
     node_index: usize,
     generated_dir: &PathBuf,
+    output_dir: &Path,
     provider: &ProviderConfig,
 ) -> Result<String, String> {
     let node = snapshot.nodes[node_index].clone();
@@ -454,7 +464,7 @@ fn execute_node(
                 Some(directory) if !directory.trim().is_empty() => {
                     copy_output_image(&image, directory.trim(), &node.id)?
                 }
-                _ => image.clone(),
+                _ => copy_output_image(&image, &output_dir.to_string_lossy(), &node.id)?,
             };
             snapshot.nodes[node_index].data.last_output_path = Some(output_path.clone());
 

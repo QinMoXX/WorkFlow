@@ -59,6 +59,19 @@ export type WorkflowSnapshot = {
   }>;
 };
 
+export type WorkflowCanvas = {
+  id: string;
+  name: string;
+  assetDirName: string;
+  snapshot: WorkflowSnapshot;
+};
+
+export type WorkflowProject = {
+  activeCanvasId: string;
+  assetRootDir?: string | null;
+  canvases: WorkflowCanvas[];
+};
+
 export type RunResponse = {
   snapshot: WorkflowSnapshot;
   logs: string[];

@@ -1,9 +1,11 @@
 mod workflow;
 
 use workflow::commands::{
-    cancel_run, copy_image_to_clipboard, debug_frontend_logs, import_clipboard_image,
-    import_image_data_url, load_api_config, load_workflow, run_node, run_workflow, save_api_config,
-    save_image_as, save_workflow, show_in_folder, RunControlState,
+    cancel_run, copy_image_to_clipboard, debug_frontend_logs, delete_canvas_assets_dir,
+    import_clipboard_image, import_image_data_url, load_api_config, load_workflow,
+    load_workflow_project, open_canvas_assets_dir, rename_canvas_assets_dir, run_node,
+    run_workflow, save_api_config, save_image_as, save_workflow, save_workflow_project,
+    show_in_folder, RunControlState,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -16,6 +18,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             save_workflow,
             load_workflow,
+            save_workflow_project,
+            load_workflow_project,
+            rename_canvas_assets_dir,
+            delete_canvas_assets_dir,
+            open_canvas_assets_dir,
             debug_frontend_logs,
             import_image_data_url,
             import_clipboard_image,

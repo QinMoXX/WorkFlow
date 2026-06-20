@@ -60,6 +60,7 @@ function App(_props: ReadonlyAppProps) {
 
         <section className="workflow-canvas relative min-h-0 min-w-0" onClick={workflow.closeContextMenus}>
           <CanvasToolbar
+            isSidebarCollapsed={isSidebarCollapsed}
             onFitSelected={workflow.fitSelected}
             onFitAll={workflow.fitAll}
             onAutoLayout={workflow.autoLayout}

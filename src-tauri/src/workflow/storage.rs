@@ -1,7 +1,8 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
+    thread,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -238,27 +239,30 @@ pub fn show_path_in_folder(image_path: &str) -> Result<(), String> {
         return Err(format!("图片不存在：{}", image_path));
     }
     #[cfg(target_os = "windows")]
-    let status = Command::new("explorer")
-        .arg(format!("/select,{}", path.display()))
-        .status();
+    let mut command = {
+        let mut command = Command::new("explorer");
+        command.arg(format!("/select,{}", path.display()));
+        command
+    };
 
     #[cfg(target_os = "macos")]
-    let status = Command::new("open").arg("-R").arg(path).status();
+    let mut command = {
+        let mut command = Command::new("open");
+        command.arg("-R").arg(path);
+        command
+    };
 
     #[cfg(all(unix, not(target_os = "macos")))]
-    let status = {
+    let mut command = {
         let directory = path
             .parent()
             .ok_or_else(|| format!("无法定位图片所在目录：{}", image_path))?;
-        Command::new("xdg-open").arg(directory).status()
+        let mut command = Command::new("xdg-open");
+        command.arg(directory);
+        command
     };
 
-    let status = status.map_err(|error| format!("打开文件夹失败：{}", error))?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("打开文件夹失败，退出码：{}", status))
-    }
+    spawn_open_command(&mut command, "打开文件夹失败")
 }
 
 fn open_directory(directory: &Path) -> Result<(), String> {
@@ -267,20 +271,42 @@ fn open_directory(directory: &Path) -> Result<(), String> {
     }
 
     #[cfg(target_os = "windows")]
-    let status = Command::new("explorer").arg(directory).status();
+    let mut command = {
+        let mut command = Command::new("explorer");
+        command.arg(directory);
+        command
+    };
 
     #[cfg(target_os = "macos")]
-    let status = Command::new("open").arg(directory).status();
+    let mut command = {
+        let mut command = Command::new("open");
+        command.arg(directory);
+        command
+    };
 
     #[cfg(all(unix, not(target_os = "macos")))]
-    let status = Command::new("xdg-open").arg(directory).status();
+    let mut command = {
+        let mut command = Command::new("xdg-open");
+        command.arg(directory);
+        command
+    };
 
-    let status = status.map_err(|error| format!("打开目录失败：{}", error))?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("打开目录失败，退出码：{}", status))
-    }
+    spawn_open_command(&mut command, "打开目录失败")
+}
+
+fn spawn_open_command(command: &mut Command, error_context: &str) -> Result<(), String> {
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("{}：{}", error_context, error))?;
+    thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
 }
 
 fn imported_assets_dir(app: &AppHandle, canvas_id: &str) -> Result<PathBuf, String> {

@@ -481,18 +481,40 @@ export function useWorkflowApp() {
   useEffect(() => {
     const handlePaste = async (event: ClipboardEvent) => {
       if (isEditableElement(event.target)) return;
+      if (!activeCanvasId) return;
 
       const imageFile = Array.from(event.clipboardData?.items ?? [])
         .find((item) => item.kind === "file" && item.type.startsWith("image/"))
         ?.getAsFile();
-      if (!imageFile) return;
-      if (!activeCanvasId) return;
+      const text = event.clipboardData?.getData("text/plain") ?? "";
+      if (!imageFile && text.length === 0) return;
 
       event.preventDefault();
 
       try {
-        const imported = await importImageFileData("import_clipboard_image", activeCanvasId, imageFile);
-        const node = createNode("imageInput", nodes.length);
+        if (imageFile) {
+          const imported = await importImageFileData("import_clipboard_image", activeCanvasId, imageFile);
+          const node = createNode("imageInput", nodes.length);
+          const position = flowInstance
+            ? flowInstance.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 })
+            : node.position;
+
+          node.position = position;
+          node.data = {
+            ...node.data,
+            title: "粘贴图片",
+            status: "success",
+            imagePath: imported.imagePath,
+            thumbnailPath: imported.thumbnailPath ?? undefined,
+            resultPath: imported.imagePath,
+          };
+          setNodes((current) => [...current, node]);
+          setSelectedNodeId(node.id);
+          appendLogs([`已从剪切板导入图片：${imported.imagePath}`]);
+          return;
+        }
+
+        const node = createNode("textInput", nodes.length);
         const position = flowInstance
           ? flowInstance.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 })
           : node.position;
@@ -500,17 +522,15 @@ export function useWorkflowApp() {
         node.position = position;
         node.data = {
           ...node.data,
-          title: "粘贴图片",
+          title: "粘贴文本",
           status: "success",
-          imagePath: imported.imagePath,
-          thumbnailPath: imported.thumbnailPath ?? undefined,
-          resultPath: imported.imagePath,
+          content: text,
         };
         setNodes((current) => [...current, node]);
         setSelectedNodeId(node.id);
-        appendLogs([`已从剪切板导入图片：${imported.imagePath}`]);
+        appendLogs([`已从剪切板导入文本：${previewTextForLog(text)}`]);
       } catch (error) {
-        appendLogs([`剪切板图片导入失败：${String(error)}`]);
+        appendLogs([`剪切板内容导入失败：${String(error)}`]);
       }
     };
 
@@ -1721,6 +1741,12 @@ function clientPointFromEvent(event: MouseEvent | PointerEvent | TouchEvent) {
   }
 
   return { x: event.clientX, y: event.clientY };
+}
+
+function previewTextForLog(text: string) {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 48) return normalized || "空文本";
+  return `${normalized.slice(0, 48)}...`;
 }
 
 function readFileAsDataUrl(file: File) {

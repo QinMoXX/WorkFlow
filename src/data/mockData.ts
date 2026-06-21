@@ -67,8 +67,6 @@ export const propertyPanelCopy = {
 };
 
 export const nodeSettingsPopoverCopy = {
-  modeStyle: "风格",
-  modeMark: "标记",
   sendButtonLabel: "提交",
   promptPlaceholder: "可直接输入文字指令，或上传图片输入文字指令对图片进行编辑。",
   cameraLabel: "摄像机",

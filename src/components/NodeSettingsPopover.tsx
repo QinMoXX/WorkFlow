@@ -1,4 +1,4 @@
-import { Box, Camera, ChevronDown, Expand, ImageIcon, Map, Send, Sparkles } from "lucide-react";
+import { Camera, ChevronDown, Expand, ImageIcon, Send, Sparkles } from "lucide-react";
 import { ViewportPortal } from "@xyflow/react";
 import { WorkflowNode, WorkflowNodeData } from "../types/workflow";
 import { modelsForNode } from "../lib/modelCatalog";
@@ -60,14 +60,6 @@ export function NodeSettingsPopover({
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
-            <button className={modeButtonClassName} type="button">
-              <Box size={17} />
-              {nodeSettingsPopoverCopy.modeStyle}
-            </button>
-            <button className={modeButtonClassName} type="button">
-              <Map size={17} />
-              {nodeSettingsPopoverCopy.modeMark}
-            </button>
             {(data.imagePath || data.resultPath) && (
               <div className="grid h-14 w-14 place-items-center overflow-hidden rounded-lg border border-border-default bg-control">
                 <ImageIcon size={18} className="text-text-muted" />
@@ -225,8 +217,6 @@ export function NodeSettingsPopover({
   );
 }
 
-const modeButtonClassName =
-  "grid min-w-14 gap-1 rounded-lg border border-border-default bg-control px-3 py-2 text-xs font-semibold text-text-secondary transition hover:bg-control-hover hover:text-text-primary";
 const inputClassName =
   "w-full rounded-lg border border-border-default bg-control px-3 py-2 text-sm font-normal text-text-primary outline-none transition placeholder:text-text-muted focus:border-accent focus:ring-2 focus:ring-accent/20";
 const footerSelectClassName =

@@ -72,8 +72,7 @@ pub fn run_nodes(
 
         if run_control.is_cancelled(&run_id) {
             let message = "运行已打断，节点未执行".to_string();
-            snapshot.nodes[index].data.status = "cancelled".to_string();
-            snapshot.nodes[index].data.error = Some(message.clone());
+            reset_cancelled_node_runtime(snapshot, index);
             logs.push(format!(
                 "{} 已打断：{}",
                 snapshot.nodes[index].data.title, message
@@ -175,6 +174,7 @@ pub fn run_nodes(
 
         snapshot.nodes[index].data.status = "running".to_string();
         snapshot.nodes[index].data.error = None;
+        snapshot.nodes[index].data.progress = Some(10);
         let node_started_at = timestamp();
         let node_timer = Instant::now();
         sequence += 1;
@@ -201,8 +201,7 @@ pub fn run_nodes(
             Ok(log) => {
                 if run_control.is_cancelled(&run_id) {
                     let message = "运行已打断，当前节点结果已忽略".to_string();
-                    snapshot.nodes[index].data.status = "cancelled".to_string();
-                    snapshot.nodes[index].data.error = Some(message.clone());
+                    reset_cancelled_node_runtime(snapshot, index);
                     logs.push(format!(
                         "{} 已打断：{}",
                         snapshot.nodes[index].data.title, message
@@ -244,6 +243,7 @@ pub fn run_nodes(
                     continue;
                 }
                 snapshot.nodes[index].data.status = "success".to_string();
+                snapshot.nodes[index].data.progress = Some(100);
                 let finished_at = timestamp();
                 let duration_ms = node_timer.elapsed().as_millis();
                 logs.push(format!("{}，耗时 {} ms", log, duration_ms));
@@ -278,8 +278,7 @@ pub fn run_nodes(
             Err(error) => {
                 if run_control.is_cancelled(&run_id) {
                     let message = "运行已打断，当前节点错误已忽略".to_string();
-                    snapshot.nodes[index].data.status = "cancelled".to_string();
-                    snapshot.nodes[index].data.error = Some(message.clone());
+                    reset_cancelled_node_runtime(snapshot, index);
                     logs.push(format!(
                         "{} 已打断：{}",
                         snapshot.nodes[index].data.title, message
@@ -322,6 +321,7 @@ pub fn run_nodes(
                 }
                 snapshot.nodes[index].data.status = "error".to_string();
                 snapshot.nodes[index].data.error = Some(error.clone());
+                snapshot.nodes[index].data.progress = None;
                 failed_nodes.insert(node_id.clone());
                 logs.push(format!(
                     "{} 失败：{}",
@@ -439,6 +439,7 @@ fn execute_node(
             }
             let image_source = connected_image_source(snapshot, &node.id)?;
             let model = node.data.model.clone().unwrap_or_default();
+            snapshot.nodes[node_index].data.progress = Some(18);
             let image_provider = OpenAiCompatibleImageProvider::new(provider, generated_dir)?;
             let result = image_provider.generate_image(ImageGenerationInput {
                 node_id: node.id,
@@ -475,6 +476,26 @@ fn execute_node(
             }
         }
         WorkflowNodeKind::Group => Ok(format!("{} 为视觉分组，无需执行", node.data.title)),
+    }
+}
+
+fn reset_cancelled_node_runtime(snapshot: &mut WorkflowSnapshot, node_index: usize) {
+    let node = &mut snapshot.nodes[node_index];
+    node.data.status = "idle".to_string();
+    node.data.error = None;
+    node.data.progress = None;
+
+    match node.kind {
+        WorkflowNodeKind::ImageGeneration
+        | WorkflowNodeKind::TextToImage
+        | WorkflowNodeKind::ImageToImage => {
+            node.data.result_path = None;
+            node.data.result_url = None;
+        }
+        WorkflowNodeKind::Output => {
+            node.data.last_output_path = None;
+        }
+        _ => {}
     }
 }
 
@@ -753,6 +774,7 @@ fn emit_node(
                 result_path: node.data.result_path.clone(),
                 result_url: node.data.result_url.clone(),
                 last_output_path: node.data.last_output_path.clone(),
+                progress: node.data.progress,
                 error: node.data.error.clone(),
             },
             output,

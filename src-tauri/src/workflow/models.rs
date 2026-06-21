@@ -33,6 +33,7 @@ pub struct WorkflowNodeData {
     pub last_output_path: Option<String>,
     pub result_path: Option<String>,
     pub result_url: Option<String>,
+    pub progress: Option<u8>,
     pub error: Option<String>,
     pub group_width: Option<f64>,
     pub group_height: Option<f64>,
@@ -148,6 +149,7 @@ pub struct RunNodeSnapshot {
     pub result_path: Option<String>,
     pub result_url: Option<String>,
     pub last_output_path: Option<String>,
+    pub progress: Option<u8>,
     pub error: Option<String>,
 }
 

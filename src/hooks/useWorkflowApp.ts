@@ -48,6 +48,10 @@ type NodeContextMenu = {
 
 type NodeContextMenuDetail = NodeContextMenu;
 
+type CancelNodeRunDetail = {
+  nodeId: string;
+};
+
 type EdgeContextMenu = {
   edgeId: string;
   x: number;
@@ -112,6 +116,7 @@ type WorkspaceUiState = {
 };
 
 const ACTIVE_NODE_STATUSES = new Set(["queued", "running"]);
+const RUNNING_PROGRESS_MAX = 90;
 const WORKSPACE_UI_STATE_KEY = "workflow.workspace.ui-state";
 const AUTO_SAVE_DELAY_MS = 700;
 const NODE_SETTINGS_POPOVER_DELAY_MS = 240;
@@ -177,6 +182,7 @@ export function useWorkflowApp() {
   const activeRunIdRef = useRef<string | null>(null);
   const runRequestTokenRef = useRef(0);
   const latestRunSequenceByRunIdRef = useRef(new Map<string, number>());
+  const ignoredRunIdsRef = useRef(new Set<string>());
   const historyPastRef = useRef<WorkflowSnapshot[]>([]);
   const historyFutureRef = useRef<WorkflowSnapshot[]>([]);
   const isRestoringHistoryRef = useRef(false);
@@ -414,6 +420,7 @@ export function useWorkflowApp() {
   useEffect(() => {
     const unlisteners = [
       listen<RunStartedEvent>("workflow://run/started", (event) => {
+        if (ignoredRunIdsRef.current.has(event.payload.runId)) return;
         activeRunIdRef.current = event.payload.runId;
         latestRunSequenceByRunIdRef.current.set(event.payload.runId, 0);
         setActiveRun({
@@ -425,7 +432,7 @@ export function useWorkflowApp() {
         setNodes((current) =>
           current.map((node) =>
             event.payload.nodeIds.includes(node.id)
-              ? { ...node, data: { ...node.data, status: "queued", error: undefined } }
+              ? { ...node, data: { ...node.data, status: "queued", progress: 0, error: undefined } }
               : node,
           ),
         );
@@ -434,6 +441,7 @@ export function useWorkflowApp() {
         ]);
       }),
       listen<RunNodeEvent>("workflow://run/node", (event) => {
+        if (ignoredRunIdsRef.current.has(event.payload.runId)) return;
         if (event.payload.runId !== activeRunIdRef.current) return;
         const latestSequence = latestRunSequenceByRunIdRef.current.get(event.payload.runId) ?? 0;
         if (event.payload.sequence <= latestSequence) return;
@@ -449,6 +457,12 @@ export function useWorkflowApp() {
                     resultPath: event.payload.node.resultPath ?? node.data.resultPath,
                     resultUrl: event.payload.node.resultUrl ?? node.data.resultUrl,
                     lastOutputPath: event.payload.node.lastOutputPath ?? node.data.lastOutputPath,
+                    progress:
+                      event.payload.status === "running" || event.payload.status === "queued"
+                        ? event.payload.node.progress ?? node.data.progress ?? 0
+                        : event.payload.status === "success"
+                          ? 100
+                          : undefined,
                     error: event.payload.node.error ?? event.payload.error?.message,
                   },
                 }
@@ -457,10 +471,16 @@ export function useWorkflowApp() {
         );
       }),
       listen<RunLogEvent>("workflow://run/log", (event) => {
+        if (ignoredRunIdsRef.current.has(event.payload.runId)) return;
         if (event.payload.runId !== activeRunIdRef.current) return;
         appendLogs([event.payload.message]);
       }),
       listen<RunFinishedEvent>("workflow://run/finished", (event) => {
+        if (ignoredRunIdsRef.current.has(event.payload.runId)) {
+          ignoredRunIdsRef.current.delete(event.payload.runId);
+          latestRunSequenceByRunIdRef.current.delete(event.payload.runId);
+          return;
+        }
         if (event.payload.runId !== activeRunIdRef.current) return;
         const { summary } = event.payload;
         activeRunIdRef.current = null;
@@ -477,6 +497,30 @@ export function useWorkflowApp() {
       void Promise.all(unlisteners).then((items) => items.forEach((unlisten) => unlisten()));
     };
   }, [appendLogs, setNodes]);
+
+  useEffect(() => {
+    if (!activeRun) return undefined;
+
+    const timer = window.setInterval(() => {
+      setNodes((current) =>
+        current.map((node) => {
+          if (node.data.status !== "running") return node;
+          const currentProgress = Math.max(10, Math.min(node.data.progress ?? 10, RUNNING_PROGRESS_MAX));
+          if (currentProgress >= RUNNING_PROGRESS_MAX) return node;
+          const increment = currentProgress < 50 ? 4 : currentProgress < 80 ? 2 : 1;
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              progress: Math.min(RUNNING_PROGRESS_MAX, currentProgress + increment),
+            },
+          };
+        }),
+      );
+    }, 900);
+
+    return () => window.clearInterval(timer);
+  }, [activeRun, setNodes]);
 
   useEffect(() => {
     const handlePaste = async (event: ClipboardEvent) => {
@@ -655,17 +699,20 @@ export function useWorkflowApp() {
 
   const handleSelectionChange = useCallback(({ nodes: selectedNodes }: { nodes: WorkflowNode[] }) => {
     if (suppressConnectionSelectionRef.current) return;
-    if (selectedNodes.length === 0) return;
+    const selectableNodes = selectedNodes.filter((node) => !ACTIVE_NODE_STATUSES.has(node.data.status));
+    if (selectableNodes.length === 0) return;
 
     closeConnectionPicker();
-    setSelectedNodeId(selectedNodes[0].id);
+    setSelectedNodeId(selectableNodes[0].id);
   }, [closeConnectionPicker]);
 
   const selectNode = useCallback((nodeId: string | null) => {
+    const node = nodeId ? nodes.find((item) => item.id === nodeId) : null;
+    if (node && ACTIVE_NODE_STATUSES.has(node.data.status)) return;
     closeConnectionPicker();
     suppressConnectionSelectionRef.current = false;
     setSelectedNodeId(nodeId);
-  }, [closeConnectionPicker]);
+  }, [closeConnectionPicker, nodes]);
 
   const handleMoveStart = useCallback((event: MouseEvent | TouchEvent | null) => {
     if (event) closeConnectionPicker();
@@ -964,11 +1011,16 @@ export function useWorkflowApp() {
     }
 
     const runId = activeRun.runId;
-    setActiveRun((current) => (current?.runId === runId ? { ...current, isCancelling: true } : current));
+    ignoredRunIdsRef.current.add(runId);
+    latestRunSequenceByRunIdRef.current.delete(runId);
+    activeRunIdRef.current = null;
+    runRequestTokenRef.current += 1;
+    setActiveRun(null);
+    setSelectedNodeId(null);
     setNodes((current) =>
       current.map((node) =>
         activeRun.nodeIds.includes(node.id) && ACTIVE_NODE_STATUSES.has(node.data.status)
-          ? { ...node, data: { ...node.data, status: "cancelled", error: "已请求打断运行" } }
+          ? { ...node, selected: false, data: { ...node.data, status: "idle", progress: undefined, error: undefined } }
           : node,
       ),
     );
@@ -977,10 +1029,49 @@ export function useWorkflowApp() {
       await invoke("cancel_run", { runId });
       appendLogs([`已请求打断运行：${runId}`]);
     } catch (error) {
-      setActiveRun((current) => (current?.runId === runId ? { ...current, isCancelling: false } : current));
       appendLogs([`打断运行失败：${String(error)}`]);
     }
   };
+
+  const cancelRunningNodeRun = async (nodeId: string) => {
+    if (!activeRun?.runId || !activeRun.nodeIds.includes(nodeId)) {
+      appendLogs(["当前节点没有可打断的运行"]);
+      return;
+    }
+
+    const runId = activeRun.runId;
+    ignoredRunIdsRef.current.add(runId);
+    latestRunSequenceByRunIdRef.current.delete(runId);
+    activeRunIdRef.current = null;
+    runRequestTokenRef.current += 1;
+    setActiveRun(null);
+    setSelectedNodeId(null);
+    setNodes((current) =>
+      current.map((node) =>
+        node.id === nodeId && ACTIVE_NODE_STATUSES.has(node.data.status)
+          ? { ...node, selected: false, data: { ...node.data, status: "idle", progress: undefined, error: undefined } }
+          : node,
+      ),
+    );
+
+    try {
+      await invoke("cancel_run", { runId });
+      appendLogs([`已请求打断节点：${nodeId}`]);
+    } catch (error) {
+      appendLogs([`打断节点失败：${String(error)}`]);
+    }
+  };
+
+  useEffect(() => {
+    const handleCancelNodeRun = (event: Event) => {
+      const detail = (event as CustomEvent<CancelNodeRunDetail>).detail;
+      if (!detail?.nodeId) return;
+      void cancelRunningNodeRun(detail.nodeId);
+    };
+
+    window.addEventListener("workflow:cancel-node-run", handleCancelNodeRun);
+    return () => window.removeEventListener("workflow:cancel-node-run", handleCancelNodeRun);
+  }, [cancelRunningNodeRun]);
 
   const runNode = async (nodeId: string) => {
     if (!activeCanvasId) return;
@@ -994,7 +1085,7 @@ export function useWorkflowApp() {
     setActiveRun({ runId: null, mode: "node", nodeIds: [nodeId], isCancelling: false });
     setNodes((current) =>
       current.map((node) =>
-        node.id === nodeId ? { ...node, data: { ...node.data, status: "running" } } : node,
+        node.id === nodeId ? { ...node, data: { ...node.data, status: "running", progress: 10 } } : node,
       ),
     );
     try {
@@ -1014,7 +1105,9 @@ export function useWorkflowApp() {
       setActiveRun(null);
       setNodes((current) =>
         current.map((node) =>
-          node.id === nodeId ? { ...node, data: { ...node.data, status: "error", error: String(error) } } : node,
+          node.id === nodeId
+            ? { ...node, data: { ...node.data, status: "error", progress: undefined, error: String(error) } }
+            : node,
         ),
       );
       appendLogs([`运行失败：${String(error)}`]);
@@ -1035,7 +1128,7 @@ export function useWorkflowApp() {
     activeRunIdRef.current = null;
     setActiveRun({ runId: null, mode: "workflow", nodeIds: nodes.map((node) => node.id), isCancelling: false });
     setNodes((current) =>
-      current.map((node) => ({ ...node, data: { ...node.data, status: "queued" } })),
+      current.map((node) => ({ ...node, data: { ...node.data, status: "queued", progress: 0 } })),
     );
     try {
       const response = await invoke<RunResponse>("run_workflow", {

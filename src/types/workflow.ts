@@ -32,6 +32,7 @@ export type WorkflowNodeData = {
   lastOutputPath?: string;
   resultPath?: string;
   resultUrl?: string;
+  progress?: number;
   error?: string;
   groupWidth?: number;
   groupHeight?: number;
@@ -107,6 +108,7 @@ export type RunNodeEvent = {
     resultPath?: string | null;
     resultUrl?: string | null;
     lastOutputPath?: string | null;
+    progress?: number | null;
     error?: string | null;
   };
   output?: {

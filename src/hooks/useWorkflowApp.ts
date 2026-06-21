@@ -219,6 +219,14 @@ export function useWorkflowApp() {
     () => nodes.find((node) => node.id === nodeSettingsNodeId) ?? null,
     [nodeSettingsNodeId, nodes],
   );
+  const generatedImageToolbarNode = useMemo(
+    () => (nodeSettingsNode && isGeneratedImageNode(nodeSettingsNode.data) ? nodeSettingsNode : null),
+    [nodeSettingsNode],
+  );
+  const propertySettingsNode = useMemo(
+    () => (nodeSettingsNode && !isGeneratedImageNode(nodeSettingsNode.data) ? nodeSettingsNode : null),
+    [nodeSettingsNode],
+  );
   const isRunActive = activeRun !== null;
   const canCancelRun = Boolean(activeRun?.runId) && !activeRun?.isCancelling;
   const selectedNodeCanCancelRun = Boolean(
@@ -1202,21 +1210,30 @@ export function useWorkflowApp() {
     deleteEdge(edgeContextMenu.edgeId);
   };
 
+  const saveImageByPath = useCallback(
+    async (imagePath: string) => {
+      try {
+        const destinationPath = await save({
+          defaultPath: defaultImageFileName(imagePath),
+          filters: [{ name: "Image", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
+        });
+        if (!destinationPath) return;
+        const savedPath = await invoke<string>("save_image_as", {
+          imagePath,
+          destinationPath,
+        });
+        appendLogs([`已保存图片：${savedPath}`]);
+      } catch (error) {
+        appendLogs([`保存图片失败：${String(error)}`]);
+      }
+    },
+    [appendLogs],
+  );
+
   const saveContextImage = async () => {
     if (!nodeContextMenu?.imagePath) return;
     try {
-      const destinationPath = await save({
-        defaultPath: defaultImageFileName(nodeContextMenu.imagePath),
-        filters: [{ name: "Image", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
-      });
-      if (!destinationPath) return;
-      const savedPath = await invoke<string>("save_image_as", {
-        imagePath: nodeContextMenu.imagePath,
-        destinationPath,
-      });
-      appendLogs([`已保存图片：${savedPath}`]);
-    } catch (error) {
-      appendLogs([`保存图片失败：${String(error)}`]);
+      await saveImageByPath(nodeContextMenu.imagePath);
     } finally {
       setNodeContextMenu(null);
     }
@@ -1761,6 +1778,8 @@ export function useWorkflowApp() {
     nodeTypes,
     selectedNode,
     nodeSettingsNode,
+    generatedImageToolbarNode,
+    propertySettingsNode,
     apiConfig,
     toasts,
     isSettingsOpen,
@@ -1797,6 +1816,7 @@ export function useWorkflowApp() {
     openNodePickerFromPaneMenu,
     addNodeFromPicker,
     saveContextImage,
+    saveImageByPath,
     copyContextImage,
     showContextImageInFolder,
     rerunContextNode,
@@ -1860,6 +1880,13 @@ async function importImageFileData(commandName: string, canvasId: string, file: 
 function nodeResultImagePath(data: WorkflowNodeData) {
   if (data.kind === "output") return data.lastOutputPath;
   return data.resultPath || data.imagePath;
+}
+
+function isGeneratedImageNode(data: WorkflowNodeData) {
+  return (
+    (data.kind === "imageGeneration" || data.kind === "textToImage" || data.kind === "imageToImage") &&
+    Boolean(data.resultPath || data.resultUrl)
+  );
 }
 
 function createThumbnailDataUrl(file: File) {

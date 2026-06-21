@@ -5,6 +5,7 @@ import "@xyflow/react/dist/style.css";
 import { AiSettingsPanel } from "./components/AiSettingsPanel";
 import { CanvasToolbar } from "./components/CanvasToolbar";
 import { ContextMenu } from "./components/ContextMenu";
+import { GeneratedImageToolbar } from "./components/GeneratedImageToolbar";
 import { NodePickerMenu } from "./components/NodePickerMenu";
 import { NodeSettingsPopover } from "./components/NodeSettingsPopover";
 import { ToastStack } from "./components/ToastStack";
@@ -98,11 +99,18 @@ function App(_props: ReadonlyAppProps) {
             proOptions={{ hideAttribution: true }}
           >
             <Background gap={22} size={1} />
+            <GeneratedImageToolbar
+              node={workflow.generatedImageToolbarNode}
+              onChange={workflow.updateSelectedNode}
+              onRun={() => workflow.generatedImageToolbarNode && workflow.runNode(workflow.generatedImageToolbarNode.id)}
+              onSaveImage={(imagePath) => void workflow.saveImageByPath(imagePath)}
+              canRun={!workflow.isRunActive}
+            />
             <NodeSettingsPopover
-              node={workflow.nodeSettingsNode}
+              node={workflow.propertySettingsNode}
               onChange={workflow.updateSelectedNode}
               onImportImage={workflow.importImageToSelectedNode}
-              onRun={() => workflow.nodeSettingsNode && workflow.runNode(workflow.nodeSettingsNode.id)}
+              onRun={() => workflow.propertySettingsNode && workflow.runNode(workflow.propertySettingsNode.id)}
               onCancelRun={workflow.cancelActiveRun}
               canRun={!workflow.isRunActive}
               canCancelRun={workflow.selectedNodeCanCancelRun}

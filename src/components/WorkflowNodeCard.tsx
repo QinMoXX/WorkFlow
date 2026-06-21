@@ -1,25 +1,26 @@
 import { type MouseEvent, type PointerEvent } from "react";
 import { Handle, NodeProps, Position } from "@xyflow/react";
-import { X } from "lucide-react";
+import { Download, FileText, ImageIcon, Layers, Sparkles, X, type LucideIcon } from "lucide-react";
 import { NodeImagePreview } from "./NodeImagePreview";
-import { outputType, nodeSummary } from "../lib/workflowGraph";
+import { outputType } from "../lib/workflowGraph";
 import { WorkflowNode } from "../types/workflow";
-import { nodeCardCopy, runStateLabels } from "../data/mockData";
+import { nodeCardCopy } from "../data/mockData";
 
 export interface ReadonlyWorkflowNodeCardProps extends NodeProps<WorkflowNode> {}
 
-const statusClassNames: Record<WorkflowNode["data"]["status"], string> = {
-  idle: "bg-text-muted",
-  queued: "bg-text-muted",
-  running: "bg-warning",
-  success: "bg-success",
-  error: "bg-danger",
-  blocked: "bg-text-muted",
-  cancelled: "bg-text-muted",
+const nodeTitleIcons: Record<WorkflowNode["data"]["kind"], LucideIcon> = {
+  textInput: FileText,
+  imageInput: ImageIcon,
+  imageGeneration: Sparkles,
+  textToImage: Sparkles,
+  imageToImage: Sparkles,
+  output: Download,
+  group: Layers,
 };
 
 export function WorkflowNodeCard({ id, data, selected }: ReadonlyWorkflowNodeCardProps) {
   const isGroup = data.kind === "group";
+  const TitleIcon = nodeTitleIcons[data.kind];
   const isRunLocked = data.status === "queued" || data.status === "running";
   const hasPromptInput = data.kind === "imageGeneration" || data.kind === "textToImage" || data.kind === "imageToImage";
   const hasImageInput = data.kind === "imageGeneration" || data.kind === "imageToImage" || data.kind === "output";
@@ -76,10 +77,12 @@ export function WorkflowNodeCard({ id, data, selected }: ReadonlyWorkflowNodeCar
       className={[
         isGroup
           ? "relative h-full w-full rounded-xl border border-dashed border-border-strong bg-panel/50 p-4"
-          : "relative w-[240px] rounded-xl border bg-panel p-3 shadow-floating",
+          : "relative w-[260px] rounded-xl border bg-transparent p-2 shadow-floating",
         selected && !isRunLocked
           ? "border-accent shadow-selected"
-          : "border-border-default",
+          : isGroup
+            ? "border-border-default"
+            : "border-transparent",
       ].join(" ")}
       onContextMenu={handleContextMenu}
     >
@@ -103,29 +106,29 @@ export function WorkflowNodeCard({ id, data, selected }: ReadonlyWorkflowNodeCar
           )}
         </>
       )}
-      <header className="flex items-center gap-2">
-        <span className={`h-2.5 w-2.5 flex-none rounded-full ${statusClassNames[data.status]}`} />
+      <header className="flex min-h-8 items-center gap-2 px-2 pb-2">
+        <TitleIcon className="h-4 w-4 flex-none text-text-muted" strokeWidth={2} aria-hidden="true" />
         <strong className="min-w-0 flex-1 truncate text-sm font-bold text-text-primary">{data.title}</strong>
-        {(data.status === "queued" || data.status === "running" || data.status === "cancelled") && (
-          <span className="flex-none rounded-pill bg-control px-2 py-0.5 text-[10px] font-semibold leading-4 text-text-secondary">
-            {runStateLabel(data.status)}
-          </span>
-        )}
       </header>
-      <p className="mt-3 line-clamp-2 min-h-9 text-xs leading-[18px] text-text-secondary">{nodeSummary(data)}</p>
-      <NodeImagePreview path={previewPath} label={`${data.title} ${nodeCardCopy.previewSuffix}`} />
-      {data.kind === "output" && data.lastOutputPath && (
-        <div className="mt-2 truncate rounded-md bg-success/10 p-2 text-[11px] leading-4 text-success" title={data.lastOutputPath}>
-          {nodeCardCopy.savedPrefix}
-          {data.lastOutputPath}
+      {!isGroup && (
+        <div className="min-h-[92px] rounded-lg border border-border-default bg-canvas/80 p-2">
+          {data.error ? (
+            <div className="line-clamp-3 rounded-md bg-danger/10 p-2 text-xs leading-5 text-danger">{data.error}</div>
+          ) : isImageContentNode(data.kind) ? (
+            previewPath ? (
+              <NodeImagePreview path={previewPath} label={`${data.title} ${nodeCardCopy.previewSuffix}`} />
+            ) : (
+              <div className="grid aspect-[4/3] place-items-center rounded-md border border-dashed border-border-subtle bg-panel/60 px-3 text-center text-xs leading-5 text-text-muted">
+                {emptyImageContent(data.kind)}
+              </div>
+            )
+          ) : (
+            <p className="line-clamp-5 min-h-[72px] whitespace-pre-wrap text-xs leading-5 text-text-secondary">
+              {textNodeContent(data)}
+            </p>
+          )}
         </div>
       )}
-      {data.kind !== "output" && data.resultPath && !previewPath && (
-        <div className="mt-2 truncate rounded-md bg-success/10 p-2 text-[11px] leading-4 text-success" title={data.resultPath}>
-          {data.resultPath}
-        </div>
-      )}
-      {data.error && <div className="mt-2 truncate rounded-md bg-danger/10 p-2 text-[11px] leading-4 text-danger">{data.error}</div>}
       {isRunLocked && (
         <div
           className="absolute inset-0 z-20 flex flex-col items-center justify-center rounded-xl bg-panel/70 px-4 backdrop-blur-sm"
@@ -159,9 +162,17 @@ export function WorkflowNodeCard({ id, data, selected }: ReadonlyWorkflowNodeCar
   );
 }
 
-function runStateLabel(status: WorkflowNode["data"]["status"]) {
-  if (status === "queued") return runStateLabels.queued;
-  if (status === "running") return runStateLabels.running;
-  if (status === "cancelled") return runStateLabels.cancelled;
-  return status;
+function isImageContentNode(kind: WorkflowNode["data"]["kind"]) {
+  return kind === "imageInput" || kind === "imageGeneration" || kind === "textToImage" || kind === "imageToImage" || kind === "output";
+}
+
+function textNodeContent(data: WorkflowNode["data"]) {
+  if (data.kind === "textInput") return data.content || "输入 prompt 文本";
+  return "视觉分组，不参与执行语义";
+}
+
+function emptyImageContent(kind: WorkflowNode["data"]["kind"]) {
+  if (kind === "imageInput") return "选择图片后显示";
+  if (kind === "output") return "等待图片输入";
+  return "等待图片生成";
 }

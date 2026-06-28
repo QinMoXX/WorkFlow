@@ -1,5 +1,4 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
-use reqwest::Url;
 use std::{
     collections::HashSet,
     fs,
@@ -437,7 +436,7 @@ fn execute_node(
             if prompt.trim().is_empty() {
                 return Err("缺少 prompt 输入".to_string());
             }
-            let image_source = connected_image_source(snapshot, &node.id)?;
+            let image_sources = connected_image_sources(snapshot, &node.id)?;
             let model = node.data.model.clone().unwrap_or_default();
             snapshot.nodes[node_index].data.progress = Some(18);
             let image_provider = OpenAiCompatibleImageProvider::new(provider, generated_dir)?;
@@ -445,14 +444,12 @@ fn execute_node(
                 node_id: node.id,
                 model: model.clone(),
                 prompt,
-                image_source,
+                image_sources,
                 size: size_from_aspect_ratio(node.data.aspect_ratio.as_deref()),
                 seed: parse_seed(node.data.seed.as_deref())?,
             })?;
             snapshot.nodes[node_index].data.result_path = Some(result.local_path.clone());
-            if !result.remote_url.is_empty() {
-                snapshot.nodes[node_index].data.result_url = Some(result.remote_url);
-            }
+            snapshot.nodes[node_index].data.result_url = None;
             Ok(format!(
                 "{} 通过 {} / {} 生成图片：{}",
                 node.data.title, provider.name, model, result.local_path
@@ -537,31 +534,49 @@ fn copy_output_image(
     Ok(destination.to_string_lossy().to_string())
 }
 
-fn connected_image_source(
+fn connected_image_sources(
     snapshot: &WorkflowSnapshot,
     target_id: &str,
-) -> Result<Option<String>, String> {
-    let image = snapshot
+) -> Result<Vec<String>, String> {
+    let mut source_nodes = snapshot
         .edges
         .iter()
-        .find(|edge| edge.target == target_id && edge.target_handle.as_deref() == Some("image-in"))
-        .and_then(|edge| snapshot.nodes.iter().find(|node| node.id == edge.source))
-        .and_then(|node| {
+        .filter(|edge| edge.target == target_id && edge.target_handle.as_deref() == Some("image-in"))
+        .filter_map(|edge| snapshot.nodes.iter().find(|node| node.id == edge.source))
+        .collect::<Vec<_>>();
+
+    source_nodes.sort_by(|left, right| {
+        left.position
+            .y
+            .partial_cmp(&right.position.y)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                left.position
+                    .x
+                    .partial_cmp(&right.position.x)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+    });
+
+    source_nodes
+        .into_iter()
+        .filter_map(|node| {
             node.data
-                .result_url
+                .result_path
                 .clone()
-                .or_else(|| node.data.result_path.clone())
                 .or_else(|| node.data.image_path.clone())
                 .or_else(|| node.data.last_output_path.clone())
         })
         .map(|image| image_to_api_source(&image))
-        .transpose()?;
-
-    Ok(image)
+        .collect()
 }
 
 fn image_to_api_source(image: &str) -> Result<String, String> {
-    if is_remote_url(image) || image.starts_with("data:image/") {
+    if is_remote_url(image) {
+        return Err("图生图输入必须是本地图片文件，不能使用网络 URL".to_string());
+    }
+
+    if image.starts_with("data:image/") {
         return Ok(image.to_string());
     }
 
@@ -666,15 +681,8 @@ fn validate_image_input_source(image: &str) -> Result<(), String> {
         return Ok(());
     }
 
-    if image.starts_with("http://") || image.starts_with("https://") {
-        Url::parse(image).map_err(|error| {
-            format!(
-                "图片输入 URL 无效：{}；原因：{}",
-                truncate_value(image, 180),
-                error
-            )
-        })?;
-        return Ok(());
+    if is_remote_url(image) {
+        return Err("图片输入必须是本地图片文件，不能使用网络 URL".to_string());
     }
 
     let path = Path::new(image);
@@ -692,16 +700,6 @@ fn validate_image_input_source(image: &str) -> Result<(), String> {
         )
     })?;
     Ok(())
-}
-
-fn truncate_value(value: &str, max_chars: usize) -> String {
-    let mut chars = value.chars();
-    let truncated: String = chars.by_ref().take(max_chars).collect();
-    if chars.next().is_some() {
-        format!("{}...", truncated)
-    } else {
-        truncated
-    }
 }
 
 fn timestamp() -> String {
@@ -767,7 +765,7 @@ fn emit_node(
                 kind: node.kind,
                 status: node.data.status.clone(),
                 result_path: node.data.result_path.clone(),
-                result_url: node.data.result_url.clone(),
+                result_url: None,
                 last_output_path: node.data.last_output_path.clone(),
                 progress: node.data.progress,
                 error: node.data.error.clone(),
@@ -817,7 +815,7 @@ fn node_output(snapshot: &WorkflowSnapshot, node_index: usize) -> Option<RunNode
             .clone()
             .or_else(|| node.data.image_path.clone())
             .or_else(|| node.data.last_output_path.clone()),
-        remote_url: node.data.result_url.clone(),
+        remote_url: None,
         thumbnail_path: node.data.thumbnail_path.clone(),
         text_preview: node
             .data
@@ -848,9 +846,8 @@ fn reusable_node_output(snapshot: &WorkflowSnapshot, node_index: usize) -> Optio
         | WorkflowNodeKind::TextToImage
         | WorkflowNodeKind::ImageToImage => node
             .data
-            .result_url
+            .result_path
             .as_deref()
-            .or(node.data.result_path.as_deref())
             .filter(|image| reusable_image_source(image))
             .map(|image| image.to_string()),
         WorkflowNodeKind::Output => node
@@ -868,7 +865,7 @@ fn reusable_image_source(image: &str) -> bool {
     if image.is_empty() {
         return false;
     }
-    if is_remote_url(image) || image.starts_with("data:image/") {
+    if image.starts_with("data:image/") {
         return true;
     }
 

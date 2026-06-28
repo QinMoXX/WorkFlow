@@ -153,7 +153,13 @@ function buildSnapshot(
 }
 
 function cleanPersistableNodeData(data: WorkflowNodeData): WorkflowNodeData {
-  const { error: _error, progress: _progress, saveDirectory: _saveDirectory, ...persistableData } = data;
+  const {
+    error: _error,
+    progress: _progress,
+    saveDirectory: _saveDirectory,
+    resultUrl: _resultUrl,
+    ...persistableData
+  } = data;
   return {
     ...persistableData,
     status: "idle",

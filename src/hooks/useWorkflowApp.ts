@@ -508,7 +508,7 @@ export function useWorkflowApp() {
                     ...node.data,
                     status: event.payload.status,
                     resultPath: event.payload.node.resultPath ?? node.data.resultPath,
-                    resultUrl: event.payload.node.resultUrl ?? node.data.resultUrl,
+                    resultUrl: event.payload.node.resultUrl ?? undefined,
                     lastOutputPath: event.payload.node.lastOutputPath ?? node.data.lastOutputPath,
                     progress:
                       event.payload.status === "running" || event.payload.status === "queued"
@@ -1145,27 +1145,30 @@ export function useWorkflowApp() {
         }
 
         if (node.data.kind === "imageGeneration" || node.data.kind === "textToImage" || node.data.kind === "imageToImage") {
-          const imageInput = connectedImageValue(nodes, edges, node.id);
+          const imageInputs = connectedImageValues(nodes, edges, node.id);
           const allowedModels =
-            node.data.kind === "imageGeneration" && imageInput
+            node.data.kind === "imageGeneration" && imageInputs.length > 0
               ? (modelWhitelistByNodeKind.imageToImage ?? [])
               : (modelWhitelistByNodeKind[node.data.kind] ?? []);
-          if (!node.data.model || !allowedModels.includes(node.data.model)) {
+          const selectedModel = node.data.model?.trim() ?? "";
+          if (!selectedModel || !allowedModels.includes(selectedModel)) {
             return `${node.data.title} 的模型不可用，请重新选择模型。`;
           }
 
           const prompt = connectedPrompt(nodes, edges, node.id) || node.data.promptOverride || "";
           if (!prompt.trim()) return `${node.data.title} 缺少 prompt。`;
 
-          if (imageInput && !(await imageSourceExists(imageInput))) {
-            return `${node.data.title} 的图片输入文件已不存在，请重新选择图片。`;
+          for (const imageInput of imageInputs) {
+            if (!(await imageSourceExists(imageInput))) {
+              return `${node.data.title} 的图片输入文件已不存在，请重新选择图片。`;
+            }
           }
 
           const missingStaticImageInput = edges
             .filter((edge) => edge.target === node.id && edge.targetHandle === "image-in")
             .some((edge) => {
               const source = nodes.find((item) => item.id === edge.source);
-              return source?.data.kind === "imageInput" && !imageInput;
+              return source?.data.kind === "imageInput" && !imageNodeValue(source);
             });
           if (missingStaticImageInput) {
             return `${node.data.title} 缺少可用图片输入。`;
@@ -2194,7 +2197,7 @@ function nodeResultImagePath(data: WorkflowNodeData) {
 function isGeneratedImageNode(data: WorkflowNodeData) {
   return (
     (data.kind === "imageGeneration" || data.kind === "textToImage" || data.kind === "imageToImage") &&
-    Boolean(data.resultPath || data.resultUrl)
+    Boolean(data.resultPath)
   );
 }
 
@@ -2256,11 +2259,18 @@ function connectedPrompt(nodes: WorkflowNode[], edges: WorkflowEdge[], targetNod
   return source?.data.kind === "textInput" ? source.data.content : undefined;
 }
 
-function connectedImageValue(nodes: WorkflowNode[], edges: WorkflowEdge[], targetNodeId: string) {
-  const imageEdge = edges.find((edge) => edge.target === targetNodeId && edge.targetHandle === "image-in");
-  const source = imageEdge ? nodes.find((node) => node.id === imageEdge.source) : null;
-  if (!source) return undefined;
-  return source.data.resultPath || source.data.imagePath || source.data.lastOutputPath || source.data.resultUrl;
+function connectedImageValues(nodes: WorkflowNode[], edges: WorkflowEdge[], targetNodeId: string) {
+  return edges
+    .filter((edge) => edge.target === targetNodeId && edge.targetHandle === "image-in")
+    .map((edge) => nodes.find((node) => node.id === edge.source))
+    .filter((node): node is WorkflowNode => Boolean(node))
+    .sort((left, right) => left.position.y - right.position.y || left.position.x - right.position.x)
+    .map(imageNodeValue)
+    .filter((value): value is string => Boolean(value));
+}
+
+function imageNodeValue(node: WorkflowNode) {
+  return node.data.resultPath || node.data.imagePath || node.data.lastOutputPath;
 }
 
 async function imageSourceExists(imagePath: string) {

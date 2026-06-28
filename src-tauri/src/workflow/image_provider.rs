@@ -19,13 +19,12 @@ pub struct ImageGenerationInput {
     pub node_id: String,
     pub model: String,
     pub prompt: String,
-    pub image_source: Option<String>,
+    pub image_sources: Vec<String>,
     pub size: Option<String>,
     pub seed: Option<i64>,
 }
 
 pub struct ImageResult {
-    pub remote_url: String,
     pub local_path: String,
 }
 
@@ -53,7 +52,7 @@ struct ImageGenerationRequest {
 struct ImageEditRequest {
     model: String,
     prompt: String,
-    image: String,
+    image: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     size: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -153,20 +152,15 @@ impl<'a> OpenAiCompatibleImageProvider<'a> {
             .first()
             .ok_or_else(|| "图片 API 响应缺少 data[0]".to_string())?;
 
-        let (remote_url, local_path) = if let Some(remote_url) = data.url.clone() {
-            let local_path = self.download_image(node_id, &remote_url)?;
-            (remote_url, local_path)
+        let local_path = if let Some(remote_url) = data.url.clone() {
+            self.download_image(node_id, &remote_url)?
         } else if let Some(b64_json) = data.b64_json.as_deref() {
-            let local_path = self.save_base64_image(node_id, b64_json)?;
-            ("".to_string(), local_path)
+            self.save_base64_image(node_id, b64_json)?
         } else {
             return Err("图片 API 响应缺少 data[0].url 或 data[0].b64_json".to_string());
         };
 
-        Ok(ImageResult {
-            remote_url,
-            local_path,
-        })
+        Ok(ImageResult { local_path })
     }
 
     fn edit_image(&self, node_id: &str, request: ImageEditRequest) -> Result<ImageResult, String> {
@@ -233,12 +227,10 @@ impl<'a> OpenAiCompatibleImageProvider<'a> {
             .first()
             .ok_or_else(|| format!("{} 响应缺少 data[0]", api_name))?;
 
-        let (remote_url, local_path) = if let Some(remote_url) = data.url.clone() {
-            let local_path = self.download_image(node_id, &remote_url)?;
-            (remote_url, local_path)
+        let local_path = if let Some(remote_url) = data.url.clone() {
+            self.download_image(node_id, &remote_url)?
         } else if let Some(b64_json) = data.b64_json.as_deref() {
-            let local_path = self.save_base64_image(node_id, b64_json)?;
-            ("".to_string(), local_path)
+            self.save_base64_image(node_id, b64_json)?
         } else {
             return Err(format!(
                 "{} 响应缺少 data[0].url 或 data[0].b64_json",
@@ -246,10 +238,7 @@ impl<'a> OpenAiCompatibleImageProvider<'a> {
             ));
         };
 
-        Ok(ImageResult {
-            remote_url,
-            local_path,
-        })
+        Ok(ImageResult { local_path })
     }
 
     fn download_image(&self, node_id: &str, remote_url: &str) -> Result<String, String> {
@@ -364,11 +353,13 @@ impl<'a> OpenAiCompatibleImageProvider<'a> {
         client: &Client,
         request: &ImageEditRequest,
     ) -> Result<multipart::Form, String> {
-        let image = image_source_part(client, &request.image)?;
         let mut form = multipart::Form::new()
             .text("model", request.model.clone())
-            .text("prompt", request.prompt.clone())
-            .part("image", image);
+            .text("prompt", request.prompt.clone());
+
+        for source in &request.image {
+            form = form.part("image", image_source_part(client, source)?);
+        }
 
         if let Some(size) = request
             .size
@@ -387,13 +378,13 @@ impl<'a> OpenAiCompatibleImageProvider<'a> {
 
 impl ImageProvider for OpenAiCompatibleImageProvider<'_> {
     fn generate_image(&self, input: ImageGenerationInput) -> Result<ImageResult, String> {
-        if let Some(image) = input.image_source {
+        if !input.image_sources.is_empty() {
             return self.edit_image(
                 &input.node_id,
                 ImageEditRequest {
                     model: input.model,
                     prompt: input.prompt,
-                    image,
+                    image: input.image_sources,
                     size: input.size,
                     seed: input.seed,
                 },

@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
+  type WheelEvent as ReactWheelEvent,
 } from "react";
 import { X } from "lucide-react";
 import { toImageSource } from "../lib/imageSource";
@@ -44,6 +45,9 @@ export interface ReadonlyImageCropDialogProps {
 
 const MIN_CROP_SCREEN_SIZE = 40;
 const MAX_THUMBNAIL_SIZE = 420;
+const MIN_IMAGE_SCALE = 0.05;
+const MAX_IMAGE_SCALE = 8;
+const WHEEL_ZOOM_SENSITIVITY = 0.0015;
 
 const cropDialogCopy = {
   title: "裁剪图片",
@@ -111,20 +115,22 @@ export function ImageCropDialog({ imagePath, isSaving, onCancel, onConfirm }: Re
 
   const fitImageToStage = useCallback(
     (naturalWidth: number, naturalHeight: number) => {
+      const nextStageSize = readStageSize(stageRef.current, stageSize);
       const nextScale = Math.min(
         1,
-        Math.max(0.05, Math.min(stageSize.width / naturalWidth, stageSize.height / naturalHeight) * 0.86),
+        Math.max(MIN_IMAGE_SCALE, Math.min(nextStageSize.width / naturalWidth, nextStageSize.height / naturalHeight) * 0.86),
       );
       const displayWidth = naturalWidth * nextScale;
       const displayHeight = naturalHeight * nextScale;
       const nextOffset = {
-        x: (stageSize.width - displayWidth) / 2,
-        y: (stageSize.height - displayHeight) / 2,
+        x: (nextStageSize.width - displayWidth) / 2,
+        y: (nextStageSize.height - displayHeight) / 2,
       };
       const cropWidth = Math.max(MIN_CROP_SCREEN_SIZE, displayWidth * 0.72);
       const cropHeight = Math.max(MIN_CROP_SCREEN_SIZE, displayHeight * 0.72);
 
       setImageSize({ width: naturalWidth, height: naturalHeight });
+      setStageSize(nextStageSize);
       setScale(nextScale);
       setImageOffset(nextOffset);
       setCrop({
@@ -211,6 +217,36 @@ export function ImageCropDialog({ imagePath, isSaving, onCancel, onConfirm }: Re
     }
   };
 
+  const zoomImage = (event: ReactWheelEvent<HTMLDivElement>) => {
+    if (!isImageLoaded || !imageSize.width || !imageSize.height) return;
+    event.preventDefault();
+    const zoomFactor = Math.exp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY);
+    const minScale = Math.max(MIN_IMAGE_SCALE, crop.width / imageSize.width, crop.height / imageSize.height);
+    const nextScale = clampNumber(scale * zoomFactor, minScale, MAX_IMAGE_SCALE);
+    if (nextScale === scale) return;
+
+    const anchor = {
+      x: crop.x + crop.width / 2,
+      y: crop.y + crop.height / 2,
+    };
+    const sourceAnchor = {
+      x: (anchor.x - imageOffset.x) / scale,
+      y: (anchor.y - imageOffset.y) / scale,
+    };
+    const nextOffset = clampImageOffset(
+      {
+        x: anchor.x - sourceAnchor.x * nextScale,
+        y: anchor.y - sourceAnchor.y * nextScale,
+      },
+      crop,
+      imageSize,
+      nextScale,
+    );
+
+    setScale(nextScale);
+    setImageOffset(nextOffset);
+  };
+
   const confirmCrop = async () => {
     try {
       const image = imageRef.current;
@@ -218,20 +254,25 @@ export function ImageCropDialog({ imagePath, isSaving, onCancel, onConfirm }: Re
       const source = clampSourceRect(sourceCrop, imageSize);
       if (source.width < 1 || source.height < 1) return;
 
-      const dataUrl = drawImageRect(image, source, source.width, source.height);
-      const thumbnailScale = Math.min(1, MAX_THUMBNAIL_SIZE / Math.max(source.width, source.height));
-      const thumbnailDataUrl = drawImageRect(
-        image,
-        source,
-        Math.max(1, Math.round(source.width * thumbnailScale)),
-        Math.max(1, Math.round(source.height * thumbnailScale)),
-      );
-      await onConfirm({
-        dataUrl,
-        thumbnailDataUrl,
-        width: source.width,
-        height: source.height,
-      });
+      const drawableImage = await loadDrawableImage(imageSource, image);
+      try {
+        const dataUrl = drawImageRect(drawableImage, source, source.width, source.height);
+        const thumbnailScale = Math.min(1, MAX_THUMBNAIL_SIZE / Math.max(source.width, source.height));
+        const thumbnailDataUrl = drawImageRect(
+          drawableImage,
+          source,
+          Math.max(1, Math.round(source.width * thumbnailScale)),
+          Math.max(1, Math.round(source.height * thumbnailScale)),
+        );
+        await onConfirm({
+          dataUrl,
+          thumbnailDataUrl,
+          width: source.width,
+          height: source.height,
+        });
+      } finally {
+        if ("close" in drawableImage) drawableImage.close();
+      }
     } catch (cropError) {
       setError(`导出裁剪图片失败：${String(cropError)}`);
     }
@@ -269,6 +310,7 @@ export function ImageCropDialog({ imagePath, isSaving, onCancel, onConfirm }: Re
             onPointerMove={continueDrag}
             onPointerUp={endDrag}
             onPointerCancel={endDrag}
+            onWheel={zoomImage}
           >
             {!isImageLoaded && !error && (
               <div className="absolute inset-0 grid place-items-center text-sm text-text-muted">
@@ -326,7 +368,10 @@ export function ImageCropDialog({ imagePath, isSaving, onCancel, onConfirm }: Re
                       ].join(" ")}
                       type="button"
                       aria-label={handle.label}
-                      onPointerDown={(event) => beginDrag(event, "resize", handle.id)}
+                      onPointerDown={(event) => {
+                        event.stopPropagation();
+                        beginDrag(event, "resize", handle.id);
+                      }}
                     />
                   ))}
                 </div>
@@ -390,13 +435,16 @@ export function ImageCropDialog({ imagePath, isSaving, onCancel, onConfirm }: Re
 function CropShade({ stageSize, crop }: { stageSize: { width: number; height: number }; crop: Rect }) {
   return (
     <>
-      <div className="absolute left-0 top-0 bg-black/48" style={{ width: stageSize.width, height: crop.y }} />
       <div
-        className="absolute left-0 bg-black/48"
+        className="pointer-events-none absolute left-0 top-0 bg-black/48"
+        style={{ width: stageSize.width, height: crop.y }}
+      />
+      <div
+        className="pointer-events-none absolute left-0 bg-black/48"
         style={{ top: crop.y, width: crop.x, height: crop.height }}
       />
       <div
-        className="absolute bg-black/48"
+        className="pointer-events-none absolute bg-black/48"
         style={{
           left: crop.x + crop.width,
           top: crop.y,
@@ -405,7 +453,7 @@ function CropShade({ stageSize, crop }: { stageSize: { width: number; height: nu
         }}
       />
       <div
-        className="absolute left-0 bg-black/48"
+        className="pointer-events-none absolute left-0 bg-black/48"
         style={{
           top: crop.y + crop.height,
           width: stageSize.width,
@@ -447,6 +495,19 @@ function sourceRectToScreenRect(rect: Rect, offset: Point, scale: number): Rect 
     width: rect.width * scale,
     height: rect.height * scale,
   };
+}
+
+function readStageSize(stage: HTMLDivElement | null, fallback: { width: number; height: number }) {
+  if (!stage) return fallback;
+  const rect = stage.getBoundingClientRect();
+  return {
+    width: Math.max(360, rect.width),
+    height: Math.max(320, rect.height),
+  };
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function clampSourceRect(rect: Rect, imageSize: { width: number; height: number }): Rect {
@@ -520,7 +581,20 @@ function clampImageOffset(offset: Point, crop: Rect, imageSize: { width: number;
   };
 }
 
-function drawImageRect(image: HTMLImageElement, source: Rect, width: number, height: number) {
+async function loadDrawableImage(source: string, fallback: HTMLImageElement): Promise<HTMLImageElement | ImageBitmap> {
+  if (!("createImageBitmap" in window)) return fallback;
+
+  try {
+    const response = await fetch(source);
+    if (!response.ok) return fallback;
+    const blob = await response.blob();
+    return await createImageBitmap(blob);
+  } catch {
+    return fallback;
+  }
+}
+
+function drawImageRect(image: CanvasImageSource, source: Rect, width: number, height: number) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;

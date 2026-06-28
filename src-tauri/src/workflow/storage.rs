@@ -903,9 +903,7 @@ fn local_image_ref_is_available(value: &str, assets_dir: Option<&Path>) -> bool 
 
 fn is_direct_image_source(value: &str) -> bool {
     let value = value.to_ascii_lowercase();
-    value.starts_with("http://")
-        || value.starts_with("https://")
-        || value.starts_with("data:image/")
+    value.starts_with("data:image/")
         || value.starts_with("blob:")
         || value.starts_with("asset:")
         || value.starts_with("tauri:")

@@ -348,9 +348,7 @@ fn local_image_path(image_path: &str) -> std::path::PathBuf {
 }
 
 fn is_direct_image_source(image_path: &str) -> bool {
-    image_path.starts_with("http://")
-        || image_path.starts_with("https://")
-        || image_path.starts_with("data:image/")
+    image_path.starts_with("data:image/")
         || image_path.starts_with("blob:")
         || image_path.starts_with("asset:")
         || image_path.starts_with("tauri:")

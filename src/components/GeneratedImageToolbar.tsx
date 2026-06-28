@@ -84,13 +84,13 @@ export function GeneratedImageToolbar({
 
 function nodeResultImagePath(node: WorkflowNode) {
   if (node.data.kind === "output") return node.data.lastOutputPath;
-  return node.data.resultPath || node.data.imagePath || node.data.resultUrl;
+  return node.data.resultPath || node.data.imagePath;
 }
 
 function isGeneratedImageNode(node: WorkflowNode) {
   return (
     (node.data.kind === "imageGeneration" || node.data.kind === "textToImage" || node.data.kind === "imageToImage") &&
-    Boolean(node.data.resultPath || node.data.resultUrl)
+    Boolean(node.data.resultPath)
   );
 }
 

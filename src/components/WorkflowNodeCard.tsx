@@ -30,7 +30,7 @@ export function WorkflowNodeCard({ id, data, selected }: ReadonlyWorkflowNodeCar
     data.kind === "imageInput"
       ? data.thumbnailPath || data.resultPath || data.imagePath
       : data.kind === "imageGeneration" || data.kind === "textToImage" || data.kind === "imageToImage"
-        ? data.resultPath || data.resultUrl
+        ? data.resultPath
         : data.kind === "output"
           ? data.lastOutputPath
         : undefined;

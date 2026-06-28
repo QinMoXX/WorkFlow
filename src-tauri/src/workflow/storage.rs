@@ -130,8 +130,13 @@ pub fn load_workflow_project_index(app: &AppHandle) -> Result<WorkflowProjectInd
     if path.exists() {
         let json = fs::read_to_string(&path)
             .map_err(|error| format!("读取项目索引失败：{}；原因：{}", path.display(), error))?;
-        let index: WorkflowProjectIndex = serde_json::from_str(&json)
-            .map_err(|error| format!("解析项目索引 JSON 失败：{}；原因：{}", path.display(), error))?;
+        let index: WorkflowProjectIndex = serde_json::from_str(&json).map_err(|error| {
+            format!(
+                "解析项目索引 JSON 失败：{}；原因：{}",
+                path.display(),
+                error
+            )
+        })?;
         return Ok(normalized_project_index(index));
     }
 
@@ -145,8 +150,13 @@ pub fn create_workflow_project(app: &AppHandle, name: &str) -> Result<WorkflowPr
     let created_at = timestamp_string()?;
     let id = format!("project-{}", timestamp_millis()?);
     let name = name.trim();
-    let name = if name.is_empty() { "未命名项目" } else { name };
-    let asset_dir_name = unique_project_asset_dir_name(app, &index, &sanitize_asset_dir_name(name))?;
+    let name = if name.is_empty() {
+        "未命名项目"
+    } else {
+        name
+    };
+    let asset_dir_name =
+        unique_project_asset_dir_name(app, &index, &sanitize_asset_dir_name(name))?;
     let project = WorkflowProject {
         id: id.clone(),
         name: name.to_string(),
@@ -177,9 +187,16 @@ pub fn create_workflow_project(app: &AppHandle, name: &str) -> Result<WorkflowPr
     Ok(project)
 }
 
-pub fn switch_workflow_project(app: &AppHandle, project_id: &str) -> Result<WorkflowProject, String> {
+pub fn switch_workflow_project(
+    app: &AppHandle,
+    project_id: &str,
+) -> Result<WorkflowProject, String> {
     let mut index = load_workflow_project_index(app)?;
-    if !index.projects.iter().any(|project| project.id == project_id) {
+    if !index
+        .projects
+        .iter()
+        .any(|project| project.id == project_id)
+    {
         return Err(format!("项目不存在：{}", project_id));
     }
     index.active_project_id = project_id.to_string();
@@ -286,16 +303,17 @@ pub fn list_project_assets(app: &AppHandle, project_id: &str) -> Result<Vec<Proj
         if !directory.exists() {
             continue;
         }
-        for entry in fs::read_dir(&directory)
-            .map_err(|error| format!("读取资产目录失败：{}；原因：{}", directory.display(), error))?
-        {
+        for entry in fs::read_dir(&directory).map_err(|error| {
+            format!("读取资产目录失败：{}；原因：{}", directory.display(), error)
+        })? {
             let entry = entry.map_err(|error| format!("读取资产条目失败：{}", error))?;
             let path = entry.path();
             if !path.is_file() || !is_supported_image_path(&path) {
                 continue;
             }
-            let metadata = fs::metadata(&path)
-                .map_err(|error| format!("读取资产信息失败：{}；原因：{}", path.display(), error))?;
+            let metadata = fs::metadata(&path).map_err(|error| {
+                format!("读取资产信息失败：{}；原因：{}", path.display(), error)
+            })?;
             let name = path
                 .file_name()
                 .and_then(|value| value.to_str())
@@ -321,7 +339,11 @@ pub fn list_project_assets(app: &AppHandle, project_id: &str) -> Result<Vec<Proj
     Ok(assets)
 }
 
-pub fn delete_project_asset(app: &AppHandle, project_id: &str, asset_path: &str) -> Result<(), String> {
+pub fn delete_project_asset(
+    app: &AppHandle,
+    project_id: &str,
+    asset_path: &str,
+) -> Result<(), String> {
     let project = load_project_by_id(app, project_id)?;
     let assets_dir = project_assets_dir(app, &project)?;
     let path = PathBuf::from(asset_path);
@@ -333,7 +355,11 @@ pub fn delete_project_asset(app: &AppHandle, project_id: &str, asset_path: &str)
     Ok(())
 }
 
-pub fn open_project_asset(app: &AppHandle, project_id: &str, asset_path: &str) -> Result<(), String> {
+pub fn open_project_asset(
+    app: &AppHandle,
+    project_id: &str,
+    asset_path: &str,
+) -> Result<(), String> {
     let project = load_project_by_id(app, project_id)?;
     let assets_dir = project_assets_dir(app, &project)?;
     let path = PathBuf::from(asset_path);
@@ -573,7 +599,11 @@ fn project_assets_dir(app: &AppHandle, project: &WorkflowProject) -> Result<Path
     Ok(project_root_dir(app, project)?.join("assets"))
 }
 
-fn project_asset_subdir(app: &AppHandle, project_id: &str, subdir: &str) -> Result<PathBuf, String> {
+fn project_asset_subdir(
+    app: &AppHandle,
+    project_id: &str,
+    subdir: &str,
+) -> Result<PathBuf, String> {
     let project = load_project_by_id(app, project_id)?;
     Ok(project_assets_dir(app, &project)?.join(subdir))
 }
@@ -686,7 +716,8 @@ fn remove_missing_local_image_refs(app: &AppHandle, project: &mut WorkflowProjec
             if clear_missing_local_image_ref(&mut node.data.result_path, assets_dir.as_deref()) {
                 node_changed = true;
             }
-            if clear_missing_local_image_ref(&mut node.data.last_output_path, assets_dir.as_deref()) {
+            if clear_missing_local_image_ref(&mut node.data.last_output_path, assets_dir.as_deref())
+            {
                 node_changed = true;
             }
 
@@ -727,7 +758,10 @@ fn local_image_ref_is_available(value: &str, assets_dir: Option<&Path>) -> bool 
     }
 
     assets_dir
-        .and_then(|root| path.file_name().map(|name| root.join("thumbnails").join(name)))
+        .and_then(|root| {
+            path.file_name()
+                .map(|name| root.join("thumbnails").join(name))
+        })
         .is_some_and(|candidate| candidate.is_file())
 }
 
@@ -820,7 +854,10 @@ fn normalized_project_index(mut index: WorkflowProjectIndex) -> WorkflowProjectI
     index
 }
 
-fn save_workflow_project_index(app: &AppHandle, index: &WorkflowProjectIndex) -> Result<(), String> {
+fn save_workflow_project_index(
+    app: &AppHandle,
+    index: &WorkflowProjectIndex,
+) -> Result<(), String> {
     let path = workflow_project_index_path(app)?;
     if let Some(parent) = path.parent() {
         create_dir_all_with_context(parent, "创建项目索引目录")?;
@@ -831,7 +868,10 @@ fn save_workflow_project_index(app: &AppHandle, index: &WorkflowProjectIndex) ->
         .map_err(|error| format!("写入项目索引失败：{}；原因：{}", path.display(), error))
 }
 
-fn load_project_summary(app: &AppHandle, project_id: &str) -> Result<WorkflowProjectSummary, String> {
+fn load_project_summary(
+    app: &AppHandle,
+    project_id: &str,
+) -> Result<WorkflowProjectSummary, String> {
     let index = load_workflow_project_index(app)?;
     index
         .projects
@@ -861,7 +901,11 @@ fn touch_project(
     project_id: &str,
 ) -> Result<(), String> {
     let now = timestamp_string()?;
-    if let Some(project) = index.projects.iter_mut().find(|project| project.id == project_id) {
+    if let Some(project) = index
+        .projects
+        .iter_mut()
+        .find(|project| project.id == project_id)
+    {
         project.last_opened_at = now.clone();
         project.updated_at = now;
     }

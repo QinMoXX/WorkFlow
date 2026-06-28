@@ -195,6 +195,18 @@ pub fn open_project_asset(
 }
 
 #[tauri::command]
+pub fn check_local_image_source(image_path: String) -> Result<bool, String> {
+    let image_path = image_path.trim();
+    let normalized = image_path.to_ascii_lowercase();
+    if image_path.is_empty() || is_direct_image_source(&normalized) {
+        return Ok(true);
+    }
+
+    let path = local_image_path(image_path);
+    Ok(path.is_file())
+}
+
+#[tauri::command]
 pub fn save_image_as(image_path: String, destination_path: String) -> Result<String, String> {
     save_image_as_path(&image_path, &destination_path)
 }
@@ -316,4 +328,30 @@ fn create_run_id() -> String {
         .unwrap_or_default();
     let sequence = RUN_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     format!("run-{}-{}-{}", millis, std::process::id(), sequence)
+}
+
+fn local_image_path(image_path: &str) -> std::path::PathBuf {
+    if let Some(rest) = image_path.strip_prefix("file:///") {
+        #[cfg(target_os = "windows")]
+        {
+            return std::path::PathBuf::from(rest.replace('/', "\\"));
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            return std::path::PathBuf::from(format!("/{}", rest));
+        }
+    }
+    if let Some(rest) = image_path.strip_prefix("file://") {
+        return std::path::PathBuf::from(rest);
+    }
+    std::path::PathBuf::from(image_path)
+}
+
+fn is_direct_image_source(image_path: &str) -> bool {
+    image_path.starts_with("http://")
+        || image_path.starts_with("https://")
+        || image_path.starts_with("data:image/")
+        || image_path.starts_with("blob:")
+        || image_path.starts_with("asset:")
+        || image_path.starts_with("tauri:")
 }

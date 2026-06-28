@@ -1120,7 +1120,7 @@ export function useWorkflowApp() {
   }, [cancelRunningNodeRun]);
 
   const validateRunRequest = useCallback(
-    (mode: RunMode, targetNodeId?: string) => {
+    async (mode: RunMode, targetNodeId?: string) => {
       if (!apiConfig.apiKey.trim()) {
         return "缺少 API Key，请先在 AI 配置中填写。";
       }
@@ -1132,10 +1132,15 @@ export function useWorkflowApp() {
         if (node.data.kind === "imageInput") {
           const image = node.data.resultPath || node.data.imagePath;
           if (!image?.trim()) return `${node.data.title} 缺少图片。`;
+          if (!(await imageSourceExists(image))) return `${node.data.title} 的图片文件已不存在，请重新选择图片。`;
         }
 
         if (node.data.kind === "imageGeneration" || node.data.kind === "textToImage" || node.data.kind === "imageToImage") {
-          const allowedModels = modelWhitelistByNodeKind[node.data.kind] ?? [];
+          const imageInput = connectedImageValue(nodes, edges, node.id);
+          const allowedModels =
+            node.data.kind === "imageGeneration" && imageInput
+              ? (modelWhitelistByNodeKind.imageToImage ?? [])
+              : (modelWhitelistByNodeKind[node.data.kind] ?? []);
           if (!node.data.model || !allowedModels.includes(node.data.model)) {
             return `${node.data.title} 的模型不可用，请重新选择模型。`;
           }
@@ -1143,11 +1148,15 @@ export function useWorkflowApp() {
           const prompt = connectedPrompt(nodes, edges, node.id) || node.data.promptOverride || "";
           if (!prompt.trim()) return `${node.data.title} 缺少 prompt。`;
 
+          if (imageInput && !(await imageSourceExists(imageInput))) {
+            return `${node.data.title} 的图片输入文件已不存在，请重新选择图片。`;
+          }
+
           const missingStaticImageInput = edges
             .filter((edge) => edge.target === node.id && edge.targetHandle === "image-in")
             .some((edge) => {
               const source = nodes.find((item) => item.id === edge.source);
-              return source?.data.kind === "imageInput" && !connectedImageValue(nodes, edges, node.id);
+              return source?.data.kind === "imageInput" && !imageInput;
             });
           if (missingStaticImageInput) {
             return `${node.data.title} 缺少可用图片输入。`;
@@ -1166,7 +1175,7 @@ export function useWorkflowApp() {
       appendLogs(["已有节点正在运行，请等待结束或先打断当前运行"]);
       return;
     }
-    const validationError = validateRunRequest("node", nodeId);
+    const validationError = await validateRunRequest("node", nodeId);
     if (validationError) {
       appendLogs([`运行前检查失败：${validationError}`]);
       return;
@@ -1216,7 +1225,7 @@ export function useWorkflowApp() {
       }
       return;
     }
-    const validationError = validateRunRequest("workflow");
+    const validationError = await validateRunRequest("workflow");
     if (validationError) {
       appendLogs([`运行前检查失败：${validationError}`]);
       return;
@@ -2178,6 +2187,14 @@ function connectedImageValue(nodes: WorkflowNode[], edges: WorkflowEdge[], targe
   const source = imageEdge ? nodes.find((node) => node.id === imageEdge.source) : null;
   if (!source) return undefined;
   return source.data.resultPath || source.data.imagePath || source.data.lastOutputPath || source.data.resultUrl;
+}
+
+async function imageSourceExists(imagePath: string) {
+  try {
+    return await invoke<boolean>("check_local_image_source", { imagePath });
+  } catch {
+    return false;
+  }
 }
 
 function projectSignature(project: WorkflowProject) {

@@ -116,7 +116,7 @@ export function nodeSummary(data: WorkflowNodeData) {
   if (data.kind === "textToImage") return data.model || "选择模型";
   if (data.kind === "imageToImage") return `${data.model || "选择模型"} · strength ${data.strength ?? 0.65}`;
   if (data.kind === "group") return "视觉分组，不参与执行语义";
-  return data.saveDirectory ? `保存到 ${data.saveDirectory}` : "等待图片输入";
+  return "保存到项目资产";
 }
 
 export function toSnapshot(nodes: WorkflowNode[], edges: WorkflowEdge[]): WorkflowSnapshot {
@@ -153,7 +153,7 @@ function buildSnapshot(
 }
 
 function cleanPersistableNodeData(data: WorkflowNodeData): WorkflowNodeData {
-  const { error: _error, progress: _progress, ...persistableData } = data;
+  const { error: _error, progress: _progress, saveDirectory: _saveDirectory, ...persistableData } = data;
   return {
     ...persistableData,
     status: "idle",

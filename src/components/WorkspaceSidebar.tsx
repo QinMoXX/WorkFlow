@@ -22,14 +22,11 @@ export interface ReadonlyWorkspaceSidebarProps {
   readonly canvases: WorkflowCanvas[];
   readonly activeCanvasId: string;
   readonly assets: ProjectAsset[];
-  readonly assetRootDir?: string | null;
   readonly onCollapse: () => void;
   readonly onCreateProject: () => void;
   readonly onSwitchProject: (projectId: string) => void;
   readonly onCreateCanvas: () => void;
   readonly onSwitchCanvas: (canvasId: string) => void;
-  readonly onChooseAssetRootDir: () => void;
-  readonly onResetAssetRootDir: () => void;
   readonly onRenameCanvas: (canvasId: string) => void;
   readonly onDeleteCanvas: (canvasId: string) => void;
   readonly onOpenCanvasAssetDir: (canvasId: string) => void;

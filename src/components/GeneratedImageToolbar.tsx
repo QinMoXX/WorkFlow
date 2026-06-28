@@ -1,4 +1,4 @@
-import { Download, Send } from "lucide-react";
+import { Crop, Download, Send } from "lucide-react";
 import { ViewportPortal } from "@xyflow/react";
 import { WorkflowNode } from "../types/workflow";
 
@@ -6,11 +6,13 @@ export interface ReadonlyGeneratedImageToolbarProps {
   readonly node: WorkflowNode | null;
   readonly onRun: () => void;
   readonly onSaveImage: (imagePath: string) => void;
+  readonly onCropImage: (imagePath: string) => void;
   readonly canRun: boolean;
 }
 
 const generatedImageToolbarCopy = {
   rerun: "重新生成",
+  crop: "裁剪",
   download: "下载",
 };
 
@@ -18,13 +20,15 @@ export function GeneratedImageToolbar({
   node,
   onRun,
   onSaveImage,
+  onCropImage,
   canRun,
 }: ReadonlyGeneratedImageToolbarProps) {
-  if (!node || !isGeneratedImageNode(node)) return null;
+  if (!node || !nodeResultImagePath(node)) return null;
 
-  const imagePath = node.data.resultPath || node.data.resultUrl;
+  const imagePath = nodeResultImagePath(node);
+  const canRerun = isGeneratedImageNode(node);
   const nodeWidth = node.measured?.width ?? readNumericDimension(node.style?.width, 260);
-  const toolbarWidth = 108;
+  const toolbarWidth = canRerun ? 148 : 108;
   const left = node.position.x + nodeWidth / 2 - toolbarWidth / 2;
   const top = node.position.y - 72;
 
@@ -40,15 +44,27 @@ export function GeneratedImageToolbar({
         onPointerDown={(event) => event.stopPropagation()}
       >
         <div className="flex h-14 w-max items-center gap-2 rounded-xl border border-border-default bg-panel-raised/95 px-3 shadow-floating backdrop-blur">
+          {canRerun && (
+            <button
+              className={toolbarIconButtonClassName}
+              type="button"
+              title={generatedImageToolbarCopy.rerun}
+              aria-label={generatedImageToolbarCopy.rerun}
+              onClick={onRun}
+              disabled={!canRun}
+            >
+              <Send size={18} />
+            </button>
+          )}
           <button
             className={toolbarIconButtonClassName}
             type="button"
-            title={generatedImageToolbarCopy.rerun}
-            aria-label={generatedImageToolbarCopy.rerun}
-            onClick={onRun}
-            disabled={!canRun}
+            title={generatedImageToolbarCopy.crop}
+            aria-label={generatedImageToolbarCopy.crop}
+            onClick={() => imagePath && onCropImage(imagePath)}
+            disabled={!imagePath}
           >
-            <Send size={18} />
+            <Crop size={19} />
           </button>
           <button
             className={toolbarIconButtonClassName}
@@ -64,6 +80,11 @@ export function GeneratedImageToolbar({
       </div>
     </ViewportPortal>
   );
+}
+
+function nodeResultImagePath(node: WorkflowNode) {
+  if (node.data.kind === "output") return node.data.lastOutputPath;
+  return node.data.resultPath || node.data.imagePath || node.data.resultUrl;
 }
 
 function isGeneratedImageNode(node: WorkflowNode) {

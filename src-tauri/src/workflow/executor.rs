@@ -461,12 +461,7 @@ fn execute_node(
         WorkflowNodeKind::Output => {
             let image =
                 connected_image(snapshot, &node.id).ok_or_else(|| "缺少图片输入".to_string())?;
-            let output_path = match node.data.save_directory.as_deref() {
-                Some(directory) if !directory.trim().is_empty() => {
-                    copy_output_image(&image, directory.trim(), &node.id)?
-                }
-                _ => copy_output_image(&image, &output_dir.to_string_lossy(), &node.id)?,
-            };
+            let output_path = copy_output_image(&image, &output_dir.to_string_lossy(), &node.id)?;
             snapshot.nodes[node_index].data.last_output_path = Some(output_path.clone());
 
             if output_path == image {
@@ -501,7 +496,7 @@ fn reset_cancelled_node_runtime(snapshot: &mut WorkflowSnapshot, node_index: usi
 
 fn copy_output_image(
     image_path: &str,
-    save_directory: &str,
+    output_directory: &str,
     node_id: &str,
 ) -> Result<String, String> {
     if is_remote_url(image_path) {
@@ -516,9 +511,9 @@ fn copy_output_image(
         return Err(format!("输出图片路径不是文件：{}", source.display()));
     }
 
-    let directory = Path::new(save_directory);
+    let directory = Path::new(output_directory);
     fs::create_dir_all(directory)
-        .map_err(|error| format!("创建输出目录失败：{}；原因：{}", save_directory, error))?;
+        .map_err(|error| format!("创建输出目录失败：{}；原因：{}", output_directory, error))?;
 
     let extension = source
         .extension()
@@ -529,7 +524,7 @@ fn copy_output_image(
         .duration_since(UNIX_EPOCH)
         .map_err(|error| error.to_string())?
         .as_millis();
-    let destination = directory.join(format!("{}-{}.{}", node_id, timestamp, extension));
+    let destination = directory.join(format!("output-{}-{}.{}", node_id, timestamp, extension));
 
     fs::copy(source, &destination).map_err(|error| {
         format!(

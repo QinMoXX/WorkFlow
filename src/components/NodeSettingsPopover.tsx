@@ -133,14 +133,6 @@ export function NodeSettingsPopover({
             />
           )}
 
-          {data.kind === "output" && (
-            <input
-              className={inputClassName}
-              value={data.saveDirectory ?? ""}
-              placeholder={propertyPanelCopy.saveDirectory}
-              onChange={(event) => onChange({ saveDirectory: event.target.value })}
-            />
-          )}
         </div>
 
         <footer className="mt-5 flex flex-wrap items-center gap-3 border-t border-border-subtle pt-3 text-sm text-text-secondary">

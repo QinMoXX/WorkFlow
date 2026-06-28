@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs,
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -205,11 +206,11 @@ pub fn switch_workflow_project(
 }
 
 pub fn generated_assets_dir(app: &AppHandle, project_id: &str) -> Result<PathBuf, String> {
-    project_asset_subdir(app, project_id, "generated")
+    project_assets_dir_for_project_id(app, project_id)
 }
 
 pub fn output_assets_dir(app: &AppHandle, project_id: &str) -> Result<PathBuf, String> {
-    project_asset_subdir(app, project_id, "output")
+    project_assets_dir_for_project_id(app, project_id)
 }
 
 pub fn rename_canvas_assets_dir(
@@ -267,7 +268,7 @@ pub fn save_imported_data_url(
     let bytes = BASE64_STANDARD
         .decode(encoded)
         .map_err(|error| format!("解析导入图片失败：{}", error))?;
-    let directory = imported_assets_dir(app, project_id)?;
+    let directory = project_assets_dir_for_project_id(app, project_id)?;
     create_dir_all_with_context(&directory, "创建导入图片目录")?;
     let timestamp = timestamp_millis()?;
     let path = directory.join(format!(
@@ -294,23 +295,21 @@ pub fn list_project_assets(app: &AppHandle, project_id: &str) -> Result<Vec<Proj
     create_project_dirs(app, &project)?;
 
     let mut assets = Vec::new();
-    for (kind, subdir) in [
-        ("imported", "imported"),
-        ("generated", "generated"),
-        ("output", "output"),
-    ] {
-        let directory = assets_dir.join(subdir);
-        if !directory.exists() {
-            continue;
-        }
-        for entry in fs::read_dir(&directory).map_err(|error| {
-            format!("读取资产目录失败：{}；原因：{}", directory.display(), error)
+    if assets_dir.exists() {
+        for entry in fs::read_dir(&assets_dir).map_err(|error| {
+            format!(
+                "读取资产目录失败：{}；原因：{}",
+                assets_dir.display(),
+                error
+            )
         })? {
             let entry = entry.map_err(|error| format!("读取资产条目失败：{}", error))?;
             let path = entry.path();
-            if !path.is_file() || !is_supported_image_path(&path) {
+            if !path.is_file() || !is_supported_image_path(&path) || is_thumbnail_asset_path(&path)
+            {
                 continue;
             }
+            let kind = asset_kind_for_path(&path);
             let metadata = fs::metadata(&path).map_err(|error| {
                 format!("读取资产信息失败：{}；原因：{}", path.display(), error)
             })?;
@@ -323,7 +322,7 @@ pub fn list_project_assets(app: &AppHandle, project_id: &str) -> Result<Vec<Proj
                 id: format!("{}:{}", kind, path.to_string_lossy()),
                 kind: kind.to_string(),
                 name,
-                thumbnail_path: thumbnail_for_asset(&assets_dir, &path, kind),
+                thumbnail_path: thumbnail_for_asset(&assets_dir, &path, &kind),
                 path: path.to_string_lossy().to_string(),
                 size_bytes: metadata.len(),
                 modified_at: metadata
@@ -348,9 +347,24 @@ pub fn delete_project_asset(
     let assets_dir = project_assets_dir(app, &project)?;
     let path = PathBuf::from(asset_path);
     ensure_child_path(&assets_dir, &path)?;
+    let thumbnail_path = thumbnail_for_asset(&assets_dir, &path, &asset_kind_for_path(&path))
+        .map(PathBuf::from)
+        .filter(|thumbnail| thumbnail != &path);
     if path.exists() {
         fs::remove_file(&path)
             .map_err(|error| format!("删除资产失败：{}；原因：{}", path.display(), error))?;
+    }
+    if let Some(thumbnail_path) = thumbnail_path {
+        if thumbnail_path.exists() {
+            ensure_child_path(&assets_dir, &thumbnail_path)?;
+            fs::remove_file(&thumbnail_path).map_err(|error| {
+                format!(
+                    "删除资产缩略图失败：{}；原因：{}",
+                    thumbnail_path.display(),
+                    error
+                )
+            })?;
+        }
     }
     Ok(())
 }
@@ -476,14 +490,6 @@ fn spawn_open_command(command: &mut Command, error_context: &str) -> Result<(), 
     Ok(())
 }
 
-fn imported_assets_dir(app: &AppHandle, project_id: &str) -> Result<PathBuf, String> {
-    project_asset_subdir(app, project_id, "imported")
-}
-
-fn thumbnails_assets_dir(app: &AppHandle, project_id: &str) -> Result<PathBuf, String> {
-    project_asset_subdir(app, project_id, "thumbnails")
-}
-
 fn save_thumbnail_data_url(
     app: &AppHandle,
     project_id: &str,
@@ -494,7 +500,7 @@ fn save_thumbnail_data_url(
     let bytes = BASE64_STANDARD
         .decode(encoded)
         .map_err(|error| format!("解析缩略图失败：{}", error))?;
-    let directory = thumbnails_assets_dir(app, project_id)?;
+    let directory = project_assets_dir_for_project_id(app, project_id)?;
     create_dir_all_with_context(&directory, "创建缩略图目录")?;
     let path = directory.join(format!(
         "thumb-{}.{}",
@@ -599,13 +605,9 @@ fn project_assets_dir(app: &AppHandle, project: &WorkflowProject) -> Result<Path
     Ok(project_root_dir(app, project)?.join("assets"))
 }
 
-fn project_asset_subdir(
-    app: &AppHandle,
-    project_id: &str,
-    subdir: &str,
-) -> Result<PathBuf, String> {
+fn project_assets_dir_for_project_id(app: &AppHandle, project_id: &str) -> Result<PathBuf, String> {
     let project = load_project_by_id(app, project_id)?;
-    Ok(project_assets_dir(app, &project)?.join(subdir))
+    project_assets_dir(app, &project)
 }
 
 fn create_project_dirs(app: &AppHandle, project: &WorkflowProject) -> Result<(), String> {
@@ -613,9 +615,6 @@ fn create_project_dirs(app: &AppHandle, project: &WorkflowProject) -> Result<(),
     create_dir_all_with_context(&root, "创建项目目录")?;
     let assets_dir = project_assets_dir(app, project)?;
     create_dir_all_with_context(&assets_dir, "创建项目资源目录")?;
-    for subdir in ["imported", "generated", "thumbnails", "output"] {
-        create_dir_all_with_context(&assets_dir.join(subdir), "创建项目资源子目录")?;
-    }
     Ok(())
 }
 
@@ -683,10 +682,7 @@ fn normalized_project(mut project: WorkflowProject) -> WorkflowProject {
     {
         project.active_canvas_id = project.canvases[0].id.clone();
     }
-    project.asset_root_dir = project
-        .asset_root_dir
-        .map(|path| path.trim().to_string())
-        .filter(|path| !path.is_empty());
+    project.asset_root_dir = None;
     project
 }
 
@@ -695,8 +691,120 @@ fn normalized_project_with_existing_images(
     project: WorkflowProject,
 ) -> (WorkflowProject, bool) {
     let mut project = normalized_project(project);
-    let changed = remove_missing_local_image_refs(app, &mut project);
+    let mut changed =
+        migrate_legacy_asset_subdirs_to_shared_dir(app, &mut project).unwrap_or(false);
+    changed |= remove_missing_local_image_refs(app, &mut project);
     (project, changed)
+}
+
+fn migrate_legacy_asset_subdirs_to_shared_dir(
+    app: &AppHandle,
+    project: &mut WorkflowProject,
+) -> Result<bool, String> {
+    let assets_dir = project_assets_dir(app, project)?;
+    create_dir_all_with_context(&assets_dir, "创建项目资源目录")?;
+
+    let mut replacements = HashMap::new();
+    for subdir in ["imported", "generated", "output", "thumbnails"] {
+        let legacy_dir = assets_dir.join(subdir);
+        if !legacy_dir.is_dir() {
+            continue;
+        }
+
+        for entry in fs::read_dir(&legacy_dir).map_err(|error| {
+            format!(
+                "读取旧资产目录失败：{}；原因：{}",
+                legacy_dir.display(),
+                error
+            )
+        })? {
+            let entry = entry.map_err(|error| format!("读取旧资产条目失败：{}", error))?;
+            let source = entry.path();
+            if !source.is_file() {
+                continue;
+            }
+            let Some(file_name) = source.file_name() else {
+                continue;
+            };
+            let destination = unique_asset_path(&assets_dir.join(file_name))?;
+            fs::rename(&source, &destination).map_err(|error| {
+                format!(
+                    "迁移旧资产失败：{} -> {}；原因：{}",
+                    source.display(),
+                    destination.display(),
+                    error
+                )
+            })?;
+            replacements.insert(
+                source.to_string_lossy().to_string(),
+                destination.to_string_lossy().to_string(),
+            );
+        }
+
+        let _ = fs::remove_dir(&legacy_dir);
+    }
+
+    if replacements.is_empty() {
+        return Ok(false);
+    }
+    update_project_image_refs(project, &replacements);
+    Ok(true)
+}
+
+fn unique_asset_path(path: &Path) -> Result<PathBuf, String> {
+    if !path.exists() {
+        return Ok(path.to_path_buf());
+    }
+
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("资产路径缺少父目录：{}", path.display()))?;
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("asset");
+    let extension = path.extension().and_then(|value| value.to_str());
+
+    for index in 2..1000 {
+        let file_name = match extension {
+            Some(extension) if !extension.is_empty() => format!("{}-{}.{}", stem, index, extension),
+            _ => format!("{}-{}", stem, index),
+        };
+        let candidate = parent.join(file_name);
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+
+    let timestamp = timestamp_millis()?;
+    let file_name = match extension {
+        Some(extension) if !extension.is_empty() => format!("{}-{}.{}", stem, timestamp, extension),
+        _ => format!("{}-{}", stem, timestamp),
+    };
+    Ok(parent.join(file_name))
+}
+
+fn update_project_image_refs(
+    project: &mut WorkflowProject,
+    replacements: &HashMap<String, String>,
+) {
+    for canvas in &mut project.canvases {
+        for node in &mut canvas.snapshot.nodes {
+            update_image_ref(&mut node.data.image_path, replacements);
+            update_image_ref(&mut node.data.thumbnail_path, replacements);
+            update_image_ref(&mut node.data.result_path, replacements);
+            update_image_ref(&mut node.data.last_output_path, replacements);
+        }
+    }
+}
+
+fn update_image_ref(value: &mut Option<String>, replacements: &HashMap<String, String>) {
+    let Some(current) = value.as_deref() else {
+        return;
+    };
+    if let Some(next) = replacements.get(current) {
+        *value = Some(next.clone());
+    }
 }
 
 fn remove_missing_local_image_refs(app: &AppHandle, project: &mut WorkflowProject) -> bool {
@@ -720,6 +828,12 @@ fn remove_missing_local_image_refs(app: &AppHandle, project: &mut WorkflowProjec
             {
                 node_changed = true;
             }
+            if clear_stale_derived_image_refs(node) {
+                node_changed = true;
+            }
+            if node.data.save_directory.take().is_some() {
+                node_changed = true;
+            }
 
             if node_changed {
                 node.data.status = "idle".to_string();
@@ -731,6 +845,31 @@ fn remove_missing_local_image_refs(app: &AppHandle, project: &mut WorkflowProjec
     }
 
     changed
+}
+
+fn clear_stale_derived_image_refs(node: &mut super::models::WorkflowNode) -> bool {
+    match node.kind {
+        super::models::WorkflowNodeKind::ImageInput => {
+            if node.data.image_path.is_none() && node.data.result_path.is_none() {
+                let had_thumbnail = node.data.thumbnail_path.take().is_some();
+                let had_result_url = node.data.result_url.take().is_some();
+                return had_thumbnail || had_result_url;
+            }
+            false
+        }
+        super::models::WorkflowNodeKind::ImageGeneration
+        | super::models::WorkflowNodeKind::TextToImage
+        | super::models::WorkflowNodeKind::ImageToImage => {
+            if node.data.result_path.is_none() {
+                return node.data.result_url.take().is_some();
+            }
+            false
+        }
+        super::models::WorkflowNodeKind::Output => false,
+        super::models::WorkflowNodeKind::TextInput | super::models::WorkflowNodeKind::Group => {
+            false
+        }
+    }
 }
 
 fn clear_missing_local_image_ref(value: &mut Option<String>, assets_dir: Option<&Path>) -> bool {
@@ -758,10 +897,7 @@ fn local_image_ref_is_available(value: &str, assets_dir: Option<&Path>) -> bool 
     }
 
     assets_dir
-        .and_then(|root| {
-            path.file_name()
-                .map(|name| root.join("thumbnails").join(name))
-        })
+        .and_then(|root| path.file_name().map(|name| root.join(name)))
         .is_some_and(|candidate| candidate.is_file())
 }
 
@@ -959,14 +1095,33 @@ fn thumbnail_for_asset(assets_dir: &Path, path: &Path, kind: &str) -> Option<Str
     }
     let stem = path.file_stem()?.to_str()?;
     let timestamp = stem.strip_prefix("imported-")?;
-    let thumbnail_dir = assets_dir.join("thumbnails");
     for extension in ["png", "jpg", "jpeg", "webp", "gif"] {
-        let candidate = thumbnail_dir.join(format!("thumb-{}.{}", timestamp, extension));
+        let candidate = assets_dir.join(format!("thumb-{}.{}", timestamp, extension));
         if candidate.is_file() {
             return Some(candidate.to_string_lossy().to_string());
         }
     }
     Some(path.to_string_lossy().to_string())
+}
+
+fn is_thumbnail_asset_path(path: &Path) -> bool {
+    path.file_stem()
+        .and_then(|value| value.to_str())
+        .is_some_and(|stem| stem.starts_with("thumb-"))
+}
+
+fn asset_kind_for_path(path: &Path) -> String {
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+    if stem.starts_with("imported-") {
+        "imported".to_string()
+    } else if stem.starts_with("output-") {
+        "output".to_string()
+    } else {
+        "generated".to_string()
+    }
 }
 
 fn ensure_child_path(root: &Path, path: &Path) -> Result<(), String> {

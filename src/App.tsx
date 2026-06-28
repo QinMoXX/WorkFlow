@@ -6,6 +6,7 @@ import { AiSettingsPanel } from "./components/AiSettingsPanel";
 import { CanvasToolbar } from "./components/CanvasToolbar";
 import { ContextMenu } from "./components/ContextMenu";
 import { GeneratedImageToolbar } from "./components/GeneratedImageToolbar";
+import { ImageCropDialog } from "./components/ImageCropDialog";
 import { NodePickerMenu } from "./components/NodePickerMenu";
 import { NodeSettingsPopover } from "./components/NodeSettingsPopover";
 import { ToastStack } from "./components/ToastStack";
@@ -39,14 +40,11 @@ function App(_props: ReadonlyAppProps) {
             canvases={workflow.canvases}
             activeCanvasId={workflow.activeCanvasId}
             assets={workflow.projectAssets}
-            assetRootDir={workflow.assetRootDir}
             onCollapse={() => setIsSidebarCollapsed(true)}
             onCreateProject={workflow.createProject}
             onSwitchProject={workflow.switchProject}
             onCreateCanvas={workflow.createCanvas}
             onSwitchCanvas={workflow.switchCanvas}
-            onChooseAssetRootDir={workflow.chooseAssetRootDir}
-            onResetAssetRootDir={workflow.resetAssetRootDir}
             onRenameCanvas={workflow.renameCanvas}
             onDeleteCanvas={workflow.deleteCanvas}
             onOpenCanvasAssetDir={workflow.openCanvasAssetDir}
@@ -113,6 +111,7 @@ function App(_props: ReadonlyAppProps) {
               node={workflow.generatedImageToolbarNode}
               onRun={() => workflow.generatedImageToolbarNode && workflow.runNode(workflow.generatedImageToolbarNode.id)}
               onSaveImage={(imagePath) => void workflow.saveImageByPath(imagePath)}
+              onCropImage={workflow.openCropTool}
               canRun={!workflow.isRunActive}
             />
             <NodeSettingsPopover
@@ -194,6 +193,12 @@ function App(_props: ReadonlyAppProps) {
           config={workflow.apiConfig}
           onClose={workflow.closeSettings}
           onSave={workflow.saveApiConfig}
+        />
+        <ImageCropDialog
+          imagePath={workflow.cropImageRequest?.imagePath ?? null}
+          isSaving={workflow.isSavingCroppedImage}
+          onCancel={workflow.closeCropTool}
+          onConfirm={workflow.createCroppedImageNode}
         />
       </main>
     </ReactFlowProvider>

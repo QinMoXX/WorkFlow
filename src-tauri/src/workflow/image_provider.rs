@@ -502,7 +502,7 @@ fn result_file_name(node_id: &str, extension: &str) -> Result<PathBuf, String> {
         .map_err(|error| error.to_string())?
         .as_nanos();
     Ok(PathBuf::from(format!(
-        "{}_{}.{}",
+        "generated-{}_{}.{}",
         sanitize_node_id(node_id),
         timestamp,
         extension

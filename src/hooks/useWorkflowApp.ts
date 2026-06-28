@@ -9,7 +9,7 @@ import {
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { save } from "@tauri-apps/plugin-dialog";
 import {
   Connection,
   EdgeChange,
@@ -122,6 +122,13 @@ type ToastMessage = {
   message: string;
 };
 
+type CroppedImagePayload = {
+  dataUrl: string;
+  thumbnailDataUrl: string;
+  width: number;
+  height: number;
+};
+
 type WorkspaceUiState = {
   viewport?: Viewport;
 };
@@ -183,6 +190,8 @@ export function useWorkflowApp() {
   const [edgeContextMenu, setEdgeContextMenu] = useState<EdgeContextMenu | null>(null);
   const [paneContextMenu, setPaneContextMenu] = useState<PaneContextMenu | null>(null);
   const [nodePickerMenu, setNodePickerMenu] = useState<NodePickerMenu | null>(null);
+  const [cropImageRequest, setCropImageRequest] = useState<{ nodeId: string; imagePath: string } | null>(null);
+  const [isSavingCroppedImage, setIsSavingCroppedImage] = useState(false);
   const [isDraggingNode, setIsDraggingNode] = useState(false);
   const [nodeSettingsNodeId, setNodeSettingsNodeId] = useState<string | null>(null);
   const [apiConfig, setApiConfig] = useState<ApiConfig>({ apiKey: "" });
@@ -234,7 +243,7 @@ export function useWorkflowApp() {
     [nodeSettingsNodeId, nodes],
   );
   const generatedImageToolbarNode = useMemo(
-    () => (nodeSettingsNode && isGeneratedImageNode(nodeSettingsNode.data) ? nodeSettingsNode : null),
+    () => (nodeSettingsNode && nodeResultImagePath(nodeSettingsNode.data) ? nodeSettingsNode : null),
     [nodeSettingsNode],
   );
   const propertySettingsNode = useMemo(
@@ -1339,6 +1348,64 @@ export function useWorkflowApp() {
     }
   };
 
+  const openCropTool = useCallback(
+    (imagePath: string) => {
+      if (!selectedNodeId) return;
+      setCropImageRequest({ nodeId: selectedNodeId, imagePath });
+      setNodeContextMenu(null);
+      setNodeSettingsNodeId(null);
+    },
+    [selectedNodeId],
+  );
+
+  const closeCropTool = useCallback(() => {
+    if (isSavingCroppedImage) return;
+    setCropImageRequest(null);
+  }, [isSavingCroppedImage]);
+
+  const createCroppedImageNode = useCallback(
+    async (payload: CroppedImagePayload) => {
+      if (!activeProjectId || !cropImageRequest) return;
+      setIsSavingCroppedImage(true);
+      try {
+        const imported = await invoke<ImportedImage>("import_image_data_url", {
+          projectId: activeProjectId,
+          dataUrl: payload.dataUrl,
+          thumbnailDataUrl: payload.thumbnailDataUrl,
+        });
+        const sourceNode = nodes.find((node) => node.id === cropImageRequest.nodeId);
+        const sourceWidth = sourceNode?.measured?.width ?? readNumericDimension(sourceNode?.style?.width, 260);
+        const nextNode = createNode("imageInput", nodes.length);
+        nextNode.position = sourceNode
+          ? { x: sourceNode.position.x + sourceWidth + 84, y: sourceNode.position.y }
+          : nextNode.position;
+        nextNode.data = {
+          ...nextNode.data,
+          title: `裁剪图片 ${payload.width}x${payload.height}`,
+          status: "success",
+          imagePath: imported.imagePath,
+          thumbnailPath: imported.thumbnailPath ?? undefined,
+          resultPath: imported.imagePath,
+        };
+
+        pushHistory();
+        setNodes((current) => [
+          ...current.map((node) => ({ ...node, selected: false })),
+          { ...nextNode, selected: true },
+        ]);
+        setSelectedNodeId(nextNode.id);
+        setCropImageRequest(null);
+        void refreshProjectAssets(activeProjectId);
+        appendLogs([`已裁剪图片并保存至资产库：${imported.imagePath}`]);
+      } catch (error) {
+        appendLogs([`裁剪图片失败：${String(error)}`]);
+      } finally {
+        setIsSavingCroppedImage(false);
+      }
+    },
+    [activeProjectId, appendLogs, cropImageRequest, nodes, pushHistory, refreshProjectAssets, setNodes],
+  );
+
   const copyContextImage = async () => {
     if (!nodeContextMenu?.imagePath) return;
     try {
@@ -1739,30 +1806,6 @@ export function useWorkflowApp() {
     [activeRun, appendLogs, applySnapshot, closeContextMenus, edges, nodes, project],
   );
 
-  const chooseAssetRootDir = useCallback(async () => {
-    if (!project) return;
-    const selected = await open({ directory: true, multiple: false });
-    if (typeof selected !== "string") return;
-
-    const currentSnapshot = toPersistableSnapshot(nodes, edges);
-    const nextProject = {
-      ...withCanvasSnapshot(project, project.activeCanvasId, currentSnapshot),
-      assetRootDir: selected,
-    };
-    setProject(nextProject);
-    appendLogs([`已设置画布资源根目录：${selected}`]);
-  }, [appendLogs, edges, nodes, project]);
-
-  const resetAssetRootDir = useCallback(() => {
-    if (!project) return;
-    const currentSnapshot = toPersistableSnapshot(nodes, edges);
-    setProject({
-      ...withCanvasSnapshot(project, project.activeCanvasId, currentSnapshot),
-      assetRootDir: null,
-    });
-    appendLogs(["已恢复默认画布资源根目录"]);
-  }, [appendLogs, edges, nodes, project]);
-
   const renameCanvas = useCallback(
     async (canvasId: string) => {
       if (!project) return;
@@ -1971,13 +2014,37 @@ export function useWorkflowApp() {
       if (!shouldDelete) return;
       try {
         await invoke("delete_project_asset", { projectId: activeProjectId, assetPath: asset.path });
+        const clearedNodes = clearDeletedAssetRefsInNodes(nodes, asset);
+        if (clearedNodes.changed) {
+          pushHistory();
+          setNodes(clearedNodes.nodes);
+          setSelectedNodeId((current) =>
+            current && clearedNodes.nodes.some((node) => node.id === current) ? current : null,
+          );
+        }
+        setProject((current) => {
+          if (!current) return current;
+          const nextCanvases = current.canvases.map((canvas) => {
+            if (canvas.id === current.activeCanvasId) return canvas;
+            const clearedSnapshot = clearDeletedAssetRefsInSnapshot(canvas.snapshot, asset);
+            return clearedSnapshot.changed
+              ? {
+                  ...canvas,
+                  snapshot: clearedSnapshot.snapshot,
+                }
+              : canvas;
+          });
+          return nextCanvases.some((canvas, index) => canvas !== current.canvases[index])
+            ? { ...current, canvases: nextCanvases }
+            : current;
+        });
         await refreshProjectAssets(activeProjectId);
         appendLogs([`已删除资产：${asset.name}`]);
       } catch (error) {
         appendLogs([`删除资产失败：${String(error)}`]);
       }
     },
-    [activeProjectId, appendLogs, refreshProjectAssets],
+    [activeProjectId, appendLogs, nodes, pushHistory, refreshProjectAssets, setNodes],
   );
 
   const openProjectAsset = useCallback(
@@ -2000,7 +2067,6 @@ export function useWorkflowApp() {
     canvases: project?.canvases ?? [],
     activeCanvas,
     activeCanvasId,
-    assetRootDir: project?.assetRootDir ?? null,
     nodes,
     edges,
     nodeTypes,
@@ -2015,6 +2081,8 @@ export function useWorkflowApp() {
     edgeContextMenu,
     paneContextMenu,
     nodePickerMenu,
+    cropImageRequest,
+    isSavingCroppedImage,
     isRunActive,
     canCancelRun,
     selectedNodeCanCancelRun,
@@ -2045,6 +2113,9 @@ export function useWorkflowApp() {
     addNodeFromPicker,
     saveContextImage,
     saveImageByPath,
+    openCropTool,
+    closeCropTool,
+    createCroppedImageNode,
     copyContextImage,
     showContextImageInFolder,
     rerunContextNode,
@@ -2061,8 +2132,6 @@ export function useWorkflowApp() {
     switchCanvas,
     createProject,
     switchProject,
-    chooseAssetRootDir,
-    resetAssetRootDir,
     renameCanvas,
     deleteCanvas,
     openCanvasAssetDir,
@@ -2104,6 +2173,11 @@ function readFileAsDataUrl(file: File) {
     reader.onerror = () => reject(reader.error ?? new Error("读取剪切板图片失败"));
     reader.readAsDataURL(file);
   });
+}
+
+function readNumericDimension(value: unknown, fallback: number) {
+  const numericValue = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numericValue) ? numericValue : fallback;
 }
 
 async function importImageFileData(commandName: string, projectId: string, file: File) {
@@ -2201,6 +2275,106 @@ function projectSignature(project: WorkflowProject) {
   return JSON.stringify(project);
 }
 
+function clearDeletedAssetRefsInSnapshot(snapshot: WorkflowSnapshot, asset: ProjectAsset) {
+  const clearedNodes = clearDeletedAssetRefsInSnapshotNodes(snapshot.nodes, asset);
+  return {
+    changed: clearedNodes.changed,
+    snapshot: clearedNodes.changed ? { ...snapshot, nodes: clearedNodes.nodes } : snapshot,
+  };
+}
+
+function clearDeletedAssetRefsInNodes(nodes: WorkflowNode[], asset: ProjectAsset) {
+  const clearedNodes = clearDeletedAssetRefsInWorkflowNodes(nodes, asset);
+  return {
+    changed: clearedNodes.changed,
+    nodes: clearedNodes.nodes,
+  };
+}
+
+function clearDeletedAssetRefsInWorkflowNodes(nodes: WorkflowNode[], asset: ProjectAsset) {
+  let changed = false;
+  const nextNodes = nodes.map((node) => {
+    const clearedData = clearDeletedAssetRefsInNodeData(node.data, asset);
+    if (!clearedData.changed) return node;
+    changed = true;
+    return {
+      ...node,
+      data: clearedData.data,
+    };
+  });
+  return { changed, nodes: nextNodes };
+}
+
+function clearDeletedAssetRefsInSnapshotNodes(nodes: WorkflowSnapshot["nodes"], asset: ProjectAsset) {
+  let changed = false;
+  const nextNodes = nodes.map((node) => {
+    const clearedData = clearDeletedAssetRefsInNodeData(node.data, asset);
+    if (!clearedData.changed) return node;
+    changed = true;
+    return {
+      ...node,
+      data: clearedData.data,
+    };
+  });
+  return { changed, nodes: nextNodes };
+}
+
+function clearDeletedAssetRefsInNodeData(data: WorkflowNodeData, asset: ProjectAsset) {
+  const deletedRefs = [asset.path, asset.thumbnailPath ?? undefined].filter((value): value is string => Boolean(value));
+  const nextData: WorkflowNodeData = { ...data };
+  let changed = false;
+  const resultPathWasDeleted = isDeletedAssetRef(nextData.resultPath, deletedRefs);
+
+  if (isDeletedAssetRef(nextData.imagePath, deletedRefs)) {
+    nextData.imagePath = undefined;
+    changed = true;
+  }
+  if (isDeletedAssetRef(nextData.thumbnailPath, deletedRefs)) {
+    nextData.thumbnailPath = undefined;
+    changed = true;
+  }
+  if (resultPathWasDeleted) {
+    nextData.resultPath = undefined;
+    changed = true;
+  }
+  if (isDeletedAssetRef(nextData.lastOutputPath, deletedRefs)) {
+    nextData.lastOutputPath = undefined;
+    changed = true;
+  }
+
+  if (
+    (data.kind === "imageInput" && !nextData.imagePath && !nextData.resultPath) ||
+    ((data.kind === "imageGeneration" || data.kind === "textToImage" || data.kind === "imageToImage") &&
+      resultPathWasDeleted)
+  ) {
+    if (nextData.thumbnailPath) {
+      nextData.thumbnailPath = undefined;
+      changed = true;
+    }
+    if (nextData.resultUrl) {
+      nextData.resultUrl = undefined;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    nextData.status = "idle";
+    nextData.progress = undefined;
+    nextData.error = undefined;
+  }
+
+  return { changed, data: nextData };
+}
+
+function isDeletedAssetRef(value: string | null | undefined, deletedRefs: string[]) {
+  if (!value) return false;
+  return deletedRefs.some((deletedRef) => normalizeLocalPathRef(value) === normalizeLocalPathRef(deletedRef));
+}
+
+function normalizeLocalPathRef(value: string) {
+  return value.trim().replace(/^file:\/\/\/?/i, "").replace(/\\/g, "/").toLowerCase();
+}
+
 function currentCanvas(project: WorkflowProject): WorkflowCanvas {
   return project.canvases.find((canvas) => canvas.id === project.activeCanvasId) ?? project.canvases[0] ?? createBlankCanvas(1);
 }
@@ -2213,7 +2387,7 @@ function normalizeProject(project: WorkflowProject): WorkflowProject {
       name: project.name || "默认项目",
       assetDirName: project.assetDirName || project.id || "project-default",
       activeCanvasId: canvas.id,
-      assetRootDir: project.assetRootDir ?? null,
+      assetRootDir: null,
       canvases: [canvas],
     };
   }
@@ -2234,7 +2408,7 @@ function normalizeProject(project: WorkflowProject): WorkflowProject {
     name: project.name || "默认项目",
     assetDirName: project.assetDirName || project.id || "project-default",
     activeCanvasId,
-    assetRootDir: project.assetRootDir ?? null,
+    assetRootDir: null,
     canvases,
   };
 }

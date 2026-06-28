@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent as ReactDragEvent,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -14,6 +22,7 @@ import {
 } from "@xyflow/react";
 import { WorkflowNodeCard } from "../components/WorkflowNodeCard";
 import { createNode, initialEdges, initialNodes } from "../lib/nodeCatalog";
+import { modelWhitelistByNodeKind } from "../lib/modelCatalog";
 import {
   connectionRules,
   fromSnapshot,
@@ -30,12 +39,14 @@ import {
   RunMode,
   RunNodeEvent,
   RunStartedEvent,
+  ProjectAsset,
   WorkflowEdge,
   WorkflowCanvas,
   WorkflowNode,
   WorkflowNodeData,
   WorkflowNodeKind,
   WorkflowProject,
+  WorkflowProjectIndex,
   WorkflowSnapshot,
 } from "../types/workflow";
 
@@ -178,6 +189,8 @@ export function useWorkflowApp() {
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<WorkflowNode, WorkflowEdge> | null>(null);
   const [activeRun, setActiveRun] = useState<ActiveRunState | null>(null);
   const [project, setProject] = useState<WorkflowProject | null>(null);
+  const [projectIndex, setProjectIndex] = useState<WorkflowProjectIndex | null>(null);
+  const [projectAssets, setProjectAssets] = useState<ProjectAsset[]>([]);
   const [isProjectLoaded, setIsProjectLoaded] = useState(false);
   const activeRunIdRef = useRef<string | null>(null);
   const runRequestTokenRef = useRef(0);
@@ -203,6 +216,7 @@ export function useWorkflowApp() {
     () => project?.canvases.find((canvas) => canvas.id === project.activeCanvasId) ?? null,
     [project],
   );
+  const activeProjectId = project?.id ?? "";
   const activeCanvasId = activeCanvas?.id ?? "";
   const selectedNode = useMemo(
     () => nodes.find((node) => node.id === selectedNodeId) ?? null,
@@ -402,19 +416,41 @@ export function useWorkflowApp() {
     [setEdges, setNodes],
   );
 
+  const refreshProjectAssets = useCallback(
+    async (projectId: string) => {
+      if (!projectId) {
+        setProjectAssets([]);
+        return;
+      }
+      try {
+        const assets = await invoke<ProjectAsset[]>("list_project_assets", { projectId });
+        setProjectAssets(assets);
+      } catch (error) {
+        setProjectAssets([]);
+        appendLogs([`资产库刷新失败：${String(error)}`]);
+      }
+    },
+    [appendLogs],
+  );
+
   useEffect(() => {
-    invoke<WorkflowProject>("load_workflow_project")
-      .then((loadedProject) => {
+    Promise.all([
+      invoke<WorkflowProjectIndex>("load_workflow_project_index"),
+      invoke<WorkflowProject>("load_workflow_project"),
+    ])
+      .then(([loadedProjectIndex, loadedProject]) => {
         const nextProject = normalizeProject(loadedProject);
+        setProjectIndex(loadedProjectIndex);
         const canvas = currentCanvas(nextProject);
         setProject(nextProject);
         applySnapshot(canvas.snapshot);
         lastPersistedProjectSignatureRef.current = projectSignature(nextProject);
         appendLogs(["已恢复上次项目"]);
+        void refreshProjectAssets(nextProject.id);
       })
       .catch((error) => appendLogs([`加载失败：${String(error)}`]))
       .finally(() => setIsProjectLoaded(true));
-  }, [appendLogs, applySnapshot]);
+  }, [appendLogs, applySnapshot, refreshProjectAssets]);
 
   useEffect(() => {
     invoke<ApiConfig>("load_api_config")
@@ -533,7 +569,7 @@ export function useWorkflowApp() {
   useEffect(() => {
     const handlePaste = async (event: ClipboardEvent) => {
       if (isEditableElement(event.target)) return;
-      if (!activeCanvasId) return;
+      if (!activeProjectId) return;
 
       const imageFile = Array.from(event.clipboardData?.items ?? [])
         .find((item) => item.kind === "file" && item.type.startsWith("image/"))
@@ -545,7 +581,7 @@ export function useWorkflowApp() {
 
       try {
         if (imageFile) {
-          const imported = await importImageFileData("import_clipboard_image", activeCanvasId, imageFile);
+          const imported = await importImageFileData("import_clipboard_image", activeProjectId, imageFile);
           const node = createNode("imageInput", nodes.length);
           const position = flowInstance
             ? flowInstance.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 })
@@ -561,6 +597,7 @@ export function useWorkflowApp() {
             resultPath: imported.imagePath,
           };
           setNodes((current) => [...current, node]);
+          void refreshProjectAssets(activeProjectId);
           setSelectedNodeId(node.id);
           appendLogs([`已从剪切板导入图片：${imported.imagePath}`]);
           return;
@@ -588,7 +625,7 @@ export function useWorkflowApp() {
 
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
-  }, [activeCanvasId, appendLogs, flowInstance, nodes.length, setNodes]);
+  }, [activeProjectId, appendLogs, flowInstance, nodes.length, refreshProjectAssets, setNodes]);
 
   useEffect(() => {
     const handleImageContextMenu = (event: Event) => {
@@ -619,9 +656,9 @@ export function useWorkflowApp() {
 
   const importImageToSelectedNode = useCallback(
     async (file: File) => {
-      if (!selectedNodeId || !activeCanvasId) return;
+      if (!selectedNodeId || !activeProjectId) return;
       try {
-        const imported = await importImageFileData("import_image_data_url", activeCanvasId, file);
+        const imported = await importImageFileData("import_image_data_url", activeProjectId, file);
         setNodes((current) =>
           current.map((node) =>
             node.id === selectedNodeId
@@ -639,11 +676,12 @@ export function useWorkflowApp() {
           ),
         );
         appendLogs([`已导入本地图片：${imported.imagePath}`]);
+        void refreshProjectAssets(activeProjectId);
       } catch (error) {
         appendLogs([`导入本地图片失败：${String(error)}`]);
       }
     },
-    [activeCanvasId, appendLogs, selectedNodeId, setNodes],
+    [activeProjectId, appendLogs, refreshProjectAssets, selectedNodeId, setNodes],
   );
 
   const pushHistory = useCallback(() => {
@@ -1081,10 +1119,56 @@ export function useWorkflowApp() {
     return () => window.removeEventListener("workflow:cancel-node-run", handleCancelNodeRun);
   }, [cancelRunningNodeRun]);
 
+  const validateRunRequest = useCallback(
+    (mode: RunMode, targetNodeId?: string) => {
+      if (!apiConfig.apiKey.trim()) {
+        return "缺少 API Key，请先在 AI 配置中填写。";
+      }
+
+      const nodeIds = new Set(mode === "workflow" ? nodes.map((node) => node.id) : upstreamNodeIds(nodes, edges, targetNodeId));
+      for (const node of nodes) {
+        if (!nodeIds.has(node.id) || node.data.kind === "group") continue;
+
+        if (node.data.kind === "imageInput") {
+          const image = node.data.resultPath || node.data.imagePath;
+          if (!image?.trim()) return `${node.data.title} 缺少图片。`;
+        }
+
+        if (node.data.kind === "imageGeneration" || node.data.kind === "textToImage" || node.data.kind === "imageToImage") {
+          const allowedModels = modelWhitelistByNodeKind[node.data.kind] ?? [];
+          if (!node.data.model || !allowedModels.includes(node.data.model)) {
+            return `${node.data.title} 的模型不可用，请重新选择模型。`;
+          }
+
+          const prompt = connectedPrompt(nodes, edges, node.id) || node.data.promptOverride || "";
+          if (!prompt.trim()) return `${node.data.title} 缺少 prompt。`;
+
+          const missingStaticImageInput = edges
+            .filter((edge) => edge.target === node.id && edge.targetHandle === "image-in")
+            .some((edge) => {
+              const source = nodes.find((item) => item.id === edge.source);
+              return source?.data.kind === "imageInput" && !connectedImageValue(nodes, edges, node.id);
+            });
+          if (missingStaticImageInput) {
+            return `${node.data.title} 缺少可用图片输入。`;
+          }
+        }
+      }
+
+      return null;
+    },
+    [apiConfig.apiKey, edges, nodes],
+  );
+
   const runNode = async (nodeId: string) => {
-    if (!activeCanvasId) return;
+    if (!activeProjectId) return;
     if (activeRun) {
       appendLogs(["已有节点正在运行，请等待结束或先打断当前运行"]);
+      return;
+    }
+    const validationError = validateRunRequest("node", nodeId);
+    if (validationError) {
+      appendLogs([`运行前检查失败：${validationError}`]);
       return;
     }
     const requestToken = runRequestTokenRef.current + 1;
@@ -1098,7 +1182,7 @@ export function useWorkflowApp() {
     );
     try {
       const response = await invoke<RunResponse>("run_node", {
-        canvasId: activeCanvasId,
+        projectId: activeProjectId,
         snapshot: toSnapshot(nodes, edges),
         nodeId,
       });
@@ -1107,6 +1191,7 @@ export function useWorkflowApp() {
       activeRunIdRef.current = response.runId;
       applySnapshot(response.snapshot);
       appendLogs(response.logs);
+      void refreshProjectAssets(activeProjectId);
     } catch (error) {
       if (requestToken !== runRequestTokenRef.current) return;
       activeRunIdRef.current = null;
@@ -1123,12 +1208,17 @@ export function useWorkflowApp() {
   };
 
   const runWorkflow = async () => {
-    if (!activeCanvasId) return;
+    if (!activeProjectId) return;
     if (activeRun) {
       const shouldCancel = window.confirm("当前已有节点正在运行。要先打断当前运行吗？");
       if (shouldCancel) {
         void cancelActiveRun();
       }
+      return;
+    }
+    const validationError = validateRunRequest("workflow");
+    if (validationError) {
+      appendLogs([`运行前检查失败：${validationError}`]);
       return;
     }
     const requestToken = runRequestTokenRef.current + 1;
@@ -1140,7 +1230,7 @@ export function useWorkflowApp() {
     );
     try {
       const response = await invoke<RunResponse>("run_workflow", {
-        canvasId: activeCanvasId,
+        projectId: activeProjectId,
         snapshot: toSnapshot(nodes, edges),
       });
       if (requestToken !== runRequestTokenRef.current) return;
@@ -1148,6 +1238,7 @@ export function useWorkflowApp() {
       activeRunIdRef.current = response.runId;
       applySnapshot(response.snapshot);
       appendLogs(response.logs);
+      void refreshProjectAssets(activeProjectId);
     } catch (error) {
       if (requestToken !== runRequestTokenRef.current) return;
       activeRunIdRef.current = null;
@@ -1711,20 +1802,12 @@ export function useWorkflowApp() {
         return;
       }
 
-      const shouldDeleteAssets = window.confirm(
-        "需要同时删除目录资源？\n确定：删除画布并删除对应目录资源。\n取消：只删除画布，保留目录资源。",
-      );
+      const shouldDeleteCanvas = window.confirm(`删除画布？\n${canvas.name}`);
+      if (!shouldDeleteCanvas) return;
       const currentSnapshot = toPersistableSnapshot(nodes, edges);
       const baseProject = withCanvasSnapshot(project, project.activeCanvasId, currentSnapshot);
 
       try {
-        if (shouldDeleteAssets) {
-          await invoke("delete_canvas_assets_dir", {
-            project: baseProject,
-            canvasId,
-          });
-        }
-
         const nextCanvases = baseProject.canvases.filter((item) => item.id !== canvasId);
         const nextActiveCanvasId =
           baseProject.activeCanvasId === canvasId ? nextCanvases[0].id : baseProject.activeCanvasId;
@@ -1767,8 +1850,144 @@ export function useWorkflowApp() {
     [appendLogs, edges, nodes, project],
   );
 
+  const createProject = useCallback(async () => {
+    if (activeRun) {
+      appendLogs(["运行中不能创建项目"]);
+      return;
+    }
+    const name = window.prompt("新建项目名称", `项目 ${(projectIndex?.projects.length ?? 0) + 1}`)?.trim();
+    if (!name) return;
+    const currentSnapshot = project ? toPersistableSnapshot(nodes, edges) : null;
+    if (project && currentSnapshot) {
+      const baseProject = withCanvasSnapshot(project, project.activeCanvasId, currentSnapshot);
+      await saveProject(baseProject, projectSignature(baseProject));
+    }
+    try {
+      const nextProject = normalizeProject(await invoke<WorkflowProject>("create_workflow_project", { name }));
+      const nextProjectIndex = await invoke<WorkflowProjectIndex>("load_workflow_project_index");
+      historyPastRef.current = [];
+      historyFutureRef.current = [];
+      setProjectIndex(nextProjectIndex);
+      setProject(nextProject);
+      applySnapshot(currentCanvas(nextProject).snapshot);
+      lastPersistedProjectSignatureRef.current = projectSignature(nextProject);
+      void refreshProjectAssets(nextProject.id);
+      appendLogs([`已创建项目：${nextProject.name}`]);
+    } catch (error) {
+      appendLogs([`创建项目失败：${String(error)}`]);
+    }
+  }, [activeRun, appendLogs, applySnapshot, edges, nodes, project, projectIndex?.projects.length, refreshProjectAssets, saveProject]);
+
+  const switchProject = useCallback(
+    async (projectId: string) => {
+      if (!project || projectId === project.id) return;
+      if (activeRun) {
+        appendLogs(["运行中不能切换项目"]);
+        return;
+      }
+      const currentSnapshot = toPersistableSnapshot(nodes, edges);
+      const baseProject = withCanvasSnapshot(project, project.activeCanvasId, currentSnapshot);
+      await saveProject(baseProject, projectSignature(baseProject));
+      try {
+        const nextProject = normalizeProject(await invoke<WorkflowProject>("switch_workflow_project", { projectId }));
+        const nextProjectIndex = await invoke<WorkflowProjectIndex>("load_workflow_project_index");
+        historyPastRef.current = [];
+        historyFutureRef.current = [];
+        setProjectIndex(nextProjectIndex);
+        setProject(nextProject);
+        applySnapshot(currentCanvas(nextProject).snapshot);
+        lastPersistedProjectSignatureRef.current = projectSignature(nextProject);
+        void refreshProjectAssets(nextProject.id);
+        appendLogs([`已切换项目：${nextProject.name}`]);
+      } catch (error) {
+        appendLogs([`切换项目失败：${String(error)}`]);
+      }
+    },
+    [activeRun, appendLogs, applySnapshot, edges, nodes, project, refreshProjectAssets, saveProject],
+  );
+
+  const addAssetToCanvas = useCallback(
+    (asset: ProjectAsset, position?: { x: number; y: number }) => {
+      pushHistory();
+      const nextNode = createNode("imageInput", nodes.length);
+      nextNode.position =
+        position ??
+        (flowInstance
+          ? flowInstance.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 })
+          : nextNode.position);
+      nextNode.data = {
+        ...nextNode.data,
+        title: asset.name,
+        status: "success",
+        imagePath: asset.path,
+        thumbnailPath: asset.thumbnailPath ?? undefined,
+        resultPath: asset.path,
+      };
+      setNodes((current) => [...current, nextNode]);
+      setSelectedNodeId(nextNode.id);
+      appendLogs([`已添加资产到画布：${asset.name}`]);
+    },
+    [appendLogs, flowInstance, nodes.length, pushHistory, setNodes],
+  );
+
+  const handleAssetDrop = useCallback(
+    (event: ReactDragEvent) => {
+      event.preventDefault();
+      const raw = event.dataTransfer.getData("application/workflow-asset");
+      if (!raw) return;
+      try {
+        const asset = JSON.parse(raw) as ProjectAsset;
+        const position = flowInstance
+          ? flowInstance.screenToFlowPosition({ x: event.clientX, y: event.clientY })
+          : { x: event.clientX, y: event.clientY };
+        addAssetToCanvas(asset, position);
+      } catch (error) {
+        appendLogs([`添加资产失败：${String(error)}`]);
+      }
+    },
+    [addAssetToCanvas, appendLogs, flowInstance],
+  );
+
+  const handleAssetDragOver = useCallback((event: ReactDragEvent) => {
+    if (event.dataTransfer.types.includes("application/workflow-asset")) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    }
+  }, []);
+
+  const deleteProjectAsset = useCallback(
+    async (asset: ProjectAsset) => {
+      if (!activeProjectId) return;
+      const shouldDelete = window.confirm(`删除资产？\n${asset.name}`);
+      if (!shouldDelete) return;
+      try {
+        await invoke("delete_project_asset", { projectId: activeProjectId, assetPath: asset.path });
+        await refreshProjectAssets(activeProjectId);
+        appendLogs([`已删除资产：${asset.name}`]);
+      } catch (error) {
+        appendLogs([`删除资产失败：${String(error)}`]);
+      }
+    },
+    [activeProjectId, appendLogs, refreshProjectAssets],
+  );
+
+  const openProjectAsset = useCallback(
+    async (asset: ProjectAsset) => {
+      if (!activeProjectId) return;
+      try {
+        await invoke("open_project_asset", { projectId: activeProjectId, assetPath: asset.path });
+      } catch (error) {
+        appendLogs([`打开资产失败：${String(error)}`]);
+      }
+    },
+    [activeProjectId, appendLogs],
+  );
+
   return {
     project,
+    projects: projectIndex?.projects ?? [],
+    activeProjectId,
+    projectAssets,
     canvases: project?.canvases ?? [],
     activeCanvas,
     activeCanvasId,
@@ -1831,11 +2050,18 @@ export function useWorkflowApp() {
     autoLayout,
     createCanvas,
     switchCanvas,
+    createProject,
+    switchProject,
     chooseAssetRootDir,
     resetAssetRootDir,
     renameCanvas,
     deleteCanvas,
     openCanvasAssetDir,
+    addAssetToCanvas,
+    deleteProjectAsset,
+    openProjectAsset,
+    handleAssetDrop,
+    handleAssetDragOver,
     hasSavedViewport: Boolean(initialUiStateRef.current.viewport),
   };
 }
@@ -1871,10 +2097,10 @@ function readFileAsDataUrl(file: File) {
   });
 }
 
-async function importImageFileData(commandName: string, canvasId: string, file: File) {
+async function importImageFileData(commandName: string, projectId: string, file: File) {
   const dataUrl = await readFileAsDataUrl(file);
   const thumbnailDataUrl = await createThumbnailDataUrl(file);
-  return invoke<ImportedImage>(commandName, { canvasId, dataUrl, thumbnailDataUrl });
+  return invoke<ImportedImage>(commandName, { projectId, dataUrl, thumbnailDataUrl });
 }
 
 function nodeResultImagePath(data: WorkflowNodeData) {
@@ -1925,6 +2151,35 @@ function defaultImageFileName(imagePath: string) {
   return "workflow-image.png";
 }
 
+function upstreamNodeIds(nodes: WorkflowNode[], edges: WorkflowEdge[], targetNodeId?: string) {
+  if (!targetNodeId) return [];
+  const required = new Set([targetNodeId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const edge of edges) {
+      if (required.has(edge.target) && !required.has(edge.source)) {
+        required.add(edge.source);
+        changed = true;
+      }
+    }
+  }
+  return nodes.filter((node) => required.has(node.id)).map((node) => node.id);
+}
+
+function connectedPrompt(nodes: WorkflowNode[], edges: WorkflowEdge[], targetNodeId: string) {
+  const promptEdge = edges.find((edge) => edge.target === targetNodeId && edge.targetHandle === "prompt-in");
+  const source = promptEdge ? nodes.find((node) => node.id === promptEdge.source) : null;
+  return source?.data.kind === "textInput" ? source.data.content : undefined;
+}
+
+function connectedImageValue(nodes: WorkflowNode[], edges: WorkflowEdge[], targetNodeId: string) {
+  const imageEdge = edges.find((edge) => edge.target === targetNodeId && edge.targetHandle === "image-in");
+  const source = imageEdge ? nodes.find((node) => node.id === imageEdge.source) : null;
+  if (!source) return undefined;
+  return source.data.resultPath || source.data.imagePath || source.data.lastOutputPath || source.data.resultUrl;
+}
+
 function projectSignature(project: WorkflowProject) {
   return JSON.stringify(project);
 }
@@ -1937,6 +2192,9 @@ function normalizeProject(project: WorkflowProject): WorkflowProject {
   if (project.canvases.length === 0) {
     const canvas = createBlankCanvas(1);
     return {
+      id: project.id || "project-default",
+      name: project.name || "默认项目",
+      assetDirName: project.assetDirName || project.id || "project-default",
       activeCanvasId: canvas.id,
       assetRootDir: project.assetRootDir ?? null,
       canvases: [canvas],
@@ -1955,6 +2213,9 @@ function normalizeProject(project: WorkflowProject): WorkflowProject {
     : canvases[0].id;
 
   return {
+    id: project.id || "project-default",
+    name: project.name || "默认项目",
+    assetDirName: project.assetDirName || project.id || "project-default",
     activeCanvasId,
     assetRootDir: project.assetRootDir ?? null,
     canvases,

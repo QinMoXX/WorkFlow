@@ -94,10 +94,46 @@ pub struct WorkflowCanvas {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkflowProject {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub asset_dir_name: String,
     pub active_canvas_id: String,
     #[serde(default)]
     pub asset_root_dir: Option<String>,
     pub canvases: Vec<WorkflowCanvas>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowProjectSummary {
+    pub id: String,
+    pub name: String,
+    pub asset_dir_name: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub last_opened_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowProjectIndex {
+    pub active_project_id: String,
+    pub projects: Vec<WorkflowProjectSummary>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectAsset {
+    pub id: String,
+    pub kind: String,
+    pub name: String,
+    pub path: String,
+    pub thumbnail_path: Option<String>,
+    pub size_bytes: u64,
+    pub modified_at: String,
 }
 
 #[derive(Debug, Serialize)]

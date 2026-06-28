@@ -34,10 +34,15 @@ function App(_props: ReadonlyAppProps) {
         {!isSidebarCollapsed && (
           <WorkspaceSidebar
             nodes={workflow.nodes}
+            projects={workflow.projects}
+            activeProjectId={workflow.activeProjectId}
             canvases={workflow.canvases}
             activeCanvasId={workflow.activeCanvasId}
+            assets={workflow.projectAssets}
             assetRootDir={workflow.assetRootDir}
             onCollapse={() => setIsSidebarCollapsed(true)}
+            onCreateProject={workflow.createProject}
+            onSwitchProject={workflow.switchProject}
             onCreateCanvas={workflow.createCanvas}
             onSwitchCanvas={workflow.switchCanvas}
             onChooseAssetRootDir={workflow.chooseAssetRootDir}
@@ -45,6 +50,9 @@ function App(_props: ReadonlyAppProps) {
             onRenameCanvas={workflow.renameCanvas}
             onDeleteCanvas={workflow.deleteCanvas}
             onOpenCanvasAssetDir={workflow.openCanvasAssetDir}
+            onAddAssetToCanvas={workflow.addAssetToCanvas}
+            onDeleteAsset={workflow.deleteProjectAsset}
+            onOpenAsset={workflow.openProjectAsset}
           />
         )}
 
@@ -88,6 +96,8 @@ function App(_props: ReadonlyAppProps) {
             onSelectionChange={workflow.handleSelectionChange}
             onSelectionStart={workflow.handleSelectionStart}
             onPaneClick={workflow.handlePaneClick}
+            onDrop={workflow.handleAssetDrop}
+            onDragOver={workflow.handleAssetDragOver}
             selectionOnDrag
             selectionKeyCode={null}
             selectionMode={SelectionMode.Partial}
@@ -101,7 +111,6 @@ function App(_props: ReadonlyAppProps) {
             <Background gap={22} size={1} />
             <GeneratedImageToolbar
               node={workflow.generatedImageToolbarNode}
-              onChange={workflow.updateSelectedNode}
               onRun={() => workflow.generatedImageToolbarNode && workflow.runNode(workflow.generatedImageToolbarNode.id)}
               onSaveImage={(imagePath) => void workflow.saveImageByPath(imagePath)}
               canRun={!workflow.isRunActive}

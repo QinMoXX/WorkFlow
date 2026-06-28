@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useState, type DragEvent, type MouseEvent as ReactMouseEvent } from "react";
 import {
   FileText,
-  FolderCog,
   FolderOpen,
   ImageIcon,
   LayoutGrid,
@@ -9,27 +8,24 @@ import {
   PanelLeftClose,
   Pencil,
   Plus,
-  RotateCcw,
   Search,
   Trash2,
 } from "lucide-react";
 import { workspaceSidebarCopy, workspaceSidebarTabs } from "../data/mockData";
 import { toImageSource } from "../lib/imageSource";
-import { WorkflowCanvas, WorkflowNode } from "../types/workflow";
-
-export interface SidebarAsset {
-  readonly id: string;
-  readonly title: string;
-  readonly path: string;
-  readonly thumbnailPath?: string;
-}
+import { ProjectAsset, ProjectAssetKind, WorkflowCanvas, WorkflowNode, WorkflowProjectSummary } from "../types/workflow";
 
 export interface ReadonlyWorkspaceSidebarProps {
   readonly nodes: WorkflowNode[];
+  readonly projects: WorkflowProjectSummary[];
+  readonly activeProjectId: string;
   readonly canvases: WorkflowCanvas[];
   readonly activeCanvasId: string;
+  readonly assets: ProjectAsset[];
   readonly assetRootDir?: string | null;
   readonly onCollapse: () => void;
+  readonly onCreateProject: () => void;
+  readonly onSwitchProject: (projectId: string) => void;
   readonly onCreateCanvas: () => void;
   readonly onSwitchCanvas: (canvasId: string) => void;
   readonly onChooseAssetRootDir: () => void;
@@ -37,47 +33,58 @@ export interface ReadonlyWorkspaceSidebarProps {
   readonly onRenameCanvas: (canvasId: string) => void;
   readonly onDeleteCanvas: (canvasId: string) => void;
   readonly onOpenCanvasAssetDir: (canvasId: string) => void;
+  readonly onAddAssetToCanvas: (asset: ProjectAsset) => void;
+  readonly onDeleteAsset: (asset: ProjectAsset) => void;
+  readonly onOpenAsset: (asset: ProjectAsset) => void;
 }
 
 type SidebarTabId = (typeof workspaceSidebarTabs)[number]["id"];
+type AssetFilter = "all" | ProjectAssetKind;
 type CanvasContextMenu = {
   canvasId: string;
   x: number;
   y: number;
 };
 
-function collectAssets(nodes: WorkflowNode[]): SidebarAsset[] {
-  return nodes.flatMap((node) => {
-    const imagePath = node.data.imagePath || node.data.resultPath || node.data.lastOutputPath;
-    if (!imagePath) return [];
-    return [
-      {
-        id: node.id,
-        title: node.data.title || workspaceSidebarCopy.assetImageFallback,
-        path: imagePath,
-        thumbnailPath: node.data.thumbnailPath || node.data.resultPath || imagePath,
-      },
-    ];
-  });
-}
+const assetFilters: Array<{ id: AssetFilter; label: string }> = [
+  { id: "all", label: "全部" },
+  { id: "imported", label: "导入" },
+  { id: "generated", label: "生成" },
+  { id: "output", label: "输出" },
+];
 
 export function WorkspaceSidebar({
   nodes,
+  projects,
+  activeProjectId,
   canvases,
   activeCanvasId,
-  assetRootDir,
+  assets,
   onCollapse,
+  onCreateProject,
+  onSwitchProject,
   onCreateCanvas,
   onSwitchCanvas,
-  onChooseAssetRootDir,
-  onResetAssetRootDir,
   onRenameCanvas,
   onDeleteCanvas,
   onOpenCanvasAssetDir,
+  onAddAssetToCanvas,
+  onDeleteAsset,
+  onOpenAsset,
 }: ReadonlyWorkspaceSidebarProps) {
   const [activeTab, setActiveTab] = useState<SidebarTabId>("canvases");
   const [canvasContextMenu, setCanvasContextMenu] = useState<CanvasContextMenu | null>(null);
-  const assets = useMemo(() => collectAssets(nodes), [nodes]);
+  const [assetQuery, setAssetQuery] = useState("");
+  const [assetFilter, setAssetFilter] = useState<AssetFilter>("all");
+
+  const filteredAssets = useMemo(() => {
+    const query = assetQuery.trim().toLowerCase();
+    return assets.filter((asset) => {
+      if (assetFilter !== "all" && asset.kind !== assetFilter) return false;
+      if (!query) return true;
+      return asset.name.toLowerCase().includes(query) || asset.path.toLowerCase().includes(query);
+    });
+  }, [assetFilter, assetQuery, assets]);
 
   useEffect(() => {
     if (!canvasContextMenu) return undefined;
@@ -107,17 +114,44 @@ export function WorkspaceSidebar({
     action(canvasId);
   };
 
+  const handleAssetDragStart = (event: DragEvent, asset: ProjectAsset) => {
+    event.dataTransfer.setData("application/workflow-asset", JSON.stringify(asset));
+    event.dataTransfer.effectAllowed = "copy";
+  };
+
   return (
     <aside className="flex min-h-0 flex-col border-r border-border-subtle bg-panel text-text-primary">
-      <header className="flex justify-end border-b border-border-subtle px-4 py-4">
-        <button
-          className="grid h-8 w-8 place-items-center rounded-md text-text-secondary transition hover:bg-control hover:text-text-primary"
-          type="button"
-          onClick={onCollapse}
-          title={workspaceSidebarCopy.collapseSidebar}
-        >
-          <PanelLeftClose size={17} />
-        </button>
+      <header className="grid gap-3 border-b border-border-subtle px-4 py-4">
+        <div className="flex items-center gap-2">
+          <select
+            className="min-w-0 flex-1"
+            value={activeProjectId}
+            onChange={(event) => onSwitchProject(event.target.value)}
+            aria-label={workspaceSidebarCopy.projectSelector}
+          >
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+          <button
+            className="grid h-8 w-8 place-items-center rounded-md text-text-secondary transition hover:bg-control hover:text-text-primary"
+            type="button"
+            onClick={onCreateProject}
+            title={workspaceSidebarCopy.createProject}
+          >
+            <Plus size={16} />
+          </button>
+          <button
+            className="grid h-8 w-8 place-items-center rounded-md text-text-secondary transition hover:bg-control hover:text-text-primary"
+            type="button"
+            onClick={onCollapse}
+            title={workspaceSidebarCopy.collapseSidebar}
+          >
+            <PanelLeftClose size={17} />
+          </button>
+        </div>
       </header>
 
       <div className="flex items-center justify-between border-b border-border-subtle px-2 py-3">
@@ -184,69 +218,91 @@ export function WorkspaceSidebar({
                 })}
               </div>
             )}
-            <div className="mt-5 grid gap-3 border-t border-border-subtle pt-4">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-semibold text-text-muted">{workspaceSidebarCopy.assetRootTitle}</span>
-                <div className="flex gap-1">
-                  <button
-                    className="grid h-8 w-8 place-items-center rounded-md text-text-secondary transition hover:bg-control hover:text-text-primary"
-                    type="button"
-                    onClick={onChooseAssetRootDir}
-                    title={workspaceSidebarCopy.chooseAssetRoot}
-                  >
-                    <FolderCog size={16} />
-                  </button>
-                  <button
-                    className="grid h-8 w-8 place-items-center rounded-md text-text-secondary transition hover:bg-control hover:text-text-primary"
-                    type="button"
-                    onClick={onResetAssetRootDir}
-                    title={workspaceSidebarCopy.resetAssetRoot}
-                  >
-                    <RotateCcw size={15} />
-                  </button>
-                </div>
-              </div>
-              <div className="truncate rounded-md bg-control/50 px-3 py-2 text-xs text-text-muted">
-                {assetRootDir || workspaceSidebarCopy.defaultAssetRoot}
-              </div>
-            </div>
           </div>
         ) : (
-          <div>
-            <div className="mb-5 flex items-center justify-between">
-              <span className="text-sm font-semibold text-text-muted">{workspaceSidebarCopy.assetsListTitle}</span>
-              <div className="flex items-center gap-3 text-sm text-text-primary">
-                <button className="inline-flex items-center gap-1" type="button">
-                  {workspaceSidebarCopy.allFilter}
-                </button>
-                <Search size={18} className="text-text-secondary" />
+          <div className="grid gap-4">
+            <div className="grid gap-3">
+              <label className="relative block">
+                <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+                <input
+                  className="h-9 w-full rounded-md border border-border-default bg-control pl-9 pr-3 text-sm text-text-primary outline-none transition placeholder:text-text-muted focus:border-accent focus:ring-2 focus:ring-accent/20"
+                  value={assetQuery}
+                  onChange={(event) => setAssetQuery(event.target.value)}
+                  placeholder={workspaceSidebarCopy.searchAssets}
+                />
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {assetFilters.map((filter) => (
+                  <button
+                    key={filter.id}
+                    className={[
+                      "rounded-md px-2.5 py-1 text-xs font-bold transition",
+                      assetFilter === filter.id
+                        ? "bg-control-hover text-text-primary"
+                        : "bg-control/40 text-text-secondary hover:bg-control-hover hover:text-text-primary",
+                    ].join(" ")}
+                    type="button"
+                    onClick={() => setAssetFilter(filter.id)}
+                  >
+                    {filter.label}
+                  </button>
+                ))}
               </div>
             </div>
 
-            {assets.length === 0 ? (
+            {filteredAssets.length === 0 ? (
               <div className="grid gap-2 rounded-lg border border-dashed border-border-default bg-control/40 p-4">
                 <strong className="text-sm text-text-primary">{workspaceSidebarCopy.emptyAssetsTitle}</strong>
                 <span className="text-xs leading-5 text-text-muted">{workspaceSidebarCopy.emptyAssetsDescription}</span>
               </div>
             ) : (
               <div className="grid gap-3">
-                {assets.map((asset) => (
-                  <div className="flex min-w-0 items-center gap-3" key={asset.id}>
-                    <div className="grid h-10 w-10 flex-none place-items-center overflow-hidden rounded-lg bg-control-hover">
+                {filteredAssets.map((asset) => (
+                  <div
+                    className="grid min-w-0 grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-border-subtle bg-control/25 p-2"
+                    key={asset.id}
+                    draggable
+                    onDragStart={(event) => handleAssetDragStart(event, asset)}
+                    title={workspaceSidebarCopy.dragAssetHint}
+                  >
+                    <button
+                      className="grid h-10 w-10 place-items-center overflow-hidden rounded-md bg-control-hover"
+                      type="button"
+                      onClick={() => onAddAssetToCanvas(asset)}
+                      title={workspaceSidebarCopy.addAssetToCanvas}
+                    >
                       {asset.thumbnailPath ? (
                         <img
                           className="h-full w-full object-cover"
                           src={toImageSource(asset.thumbnailPath)}
-                          alt={asset.title}
+                          alt={asset.name}
                           loading="lazy"
                         />
                       ) : (
                         <ImageIcon size={18} className="text-text-secondary" />
                       )}
-                    </div>
+                    </button>
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-bold text-text-primary">{asset.title}</div>
-                      <div className="truncate text-xs text-text-muted">{asset.path}</div>
+                      <div className="truncate text-sm font-bold text-text-primary">{asset.name}</div>
+                      <div className="truncate text-xs text-text-muted">{asset.kind} · {formatBytes(asset.sizeBytes)}</div>
+                    </div>
+                    <div className="flex gap-1">
+                      <button
+                        className="grid h-8 w-8 place-items-center rounded-md text-text-secondary transition hover:bg-control-hover hover:text-text-primary"
+                        type="button"
+                        onClick={() => onOpenAsset(asset)}
+                        title={workspaceSidebarCopy.openAsset}
+                      >
+                        <FolderOpen size={15} />
+                      </button>
+                      <button
+                        className="grid h-8 w-8 place-items-center rounded-md text-danger transition hover:bg-danger/10"
+                        type="button"
+                        onClick={() => onDeleteAsset(asset)}
+                        title={workspaceSidebarCopy.deleteAsset}
+                      >
+                        <Trash2 size={15} />
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -277,7 +333,7 @@ export function WorkspaceSidebar({
             onClick={() => runCanvasAction(onOpenCanvasAssetDir)}
           >
             <FolderOpen size={15} />
-            <span>{workspaceSidebarCopy.openCanvasDir}</span>
+            <span>{workspaceSidebarCopy.openProjectAssets}</span>
           </button>
           <button
             className="flex h-9 items-center gap-2 rounded-md px-3 text-left text-sm text-danger transition hover:bg-danger/10"
@@ -298,4 +354,10 @@ export function WorkspaceSidebar({
       </footer>
     </aside>
   );
+}
+
+function formatBytes(value: number) {
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
 }

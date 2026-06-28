@@ -16,18 +16,27 @@ use tauri::{AppHandle, State};
 use super::{
     executor::run_nodes,
     graph::{execution_order_for_node, topological_order, validate_connections},
-    models::{ImportedImage, RunResponse, WorkflowProject, WorkflowSnapshot},
+    models::{
+        ImportedImage, ProjectAsset, RunResponse, WorkflowProject, WorkflowProjectIndex,
+        WorkflowSnapshot,
+    },
     providers::{
         load_api_config as load_api_config_value, load_runtime_provider,
         save_api_config as save_api_config_value, ApiConfig,
     },
     storage::{
+        create_workflow_project as create_workflow_project_value,
         delete_canvas_assets_dir as delete_canvas_assets_dir_value,
-        load_workflow_project as load_workflow_project_value, load_workflow_snapshot,
+        delete_project_asset as delete_project_asset_value,
+        list_project_assets as list_project_assets_value,
+        load_workflow_project as load_workflow_project_value,
+        load_workflow_project_index as load_workflow_project_index_value, load_workflow_snapshot,
         open_canvas_assets_dir as open_canvas_assets_dir_value,
+        open_project_asset as open_project_asset_value,
         rename_canvas_assets_dir as rename_canvas_assets_dir_value, save_image_as_path,
         save_imported_data_url, save_workflow_project as save_workflow_project_value,
         save_workflow_snapshot, show_path_in_folder,
+        switch_workflow_project as switch_workflow_project_value,
     },
 };
 
@@ -83,6 +92,24 @@ pub fn load_workflow_project(app: AppHandle) -> Result<WorkflowProject, String> 
 }
 
 #[tauri::command]
+pub fn load_workflow_project_index(app: AppHandle) -> Result<WorkflowProjectIndex, String> {
+    load_workflow_project_index_value(&app)
+}
+
+#[tauri::command]
+pub fn create_workflow_project(app: AppHandle, name: String) -> Result<WorkflowProject, String> {
+    create_workflow_project_value(&app, &name)
+}
+
+#[tauri::command]
+pub fn switch_workflow_project(
+    app: AppHandle,
+    project_id: String,
+) -> Result<WorkflowProject, String> {
+    switch_workflow_project_value(&app, &project_id)
+}
+
+#[tauri::command]
 pub fn rename_canvas_assets_dir(
     app: AppHandle,
     project: WorkflowProject,
@@ -124,21 +151,47 @@ pub fn debug_frontend_logs(messages: Vec<String>) {
 #[tauri::command]
 pub fn import_image_data_url(
     app: AppHandle,
-    canvas_id: String,
+    project_id: String,
     data_url: String,
     thumbnail_data_url: Option<String>,
 ) -> Result<ImportedImage, String> {
-    save_imported_data_url(&app, &canvas_id, &data_url, thumbnail_data_url.as_deref())
+    save_imported_data_url(&app, &project_id, &data_url, thumbnail_data_url.as_deref())
 }
 
 #[tauri::command]
 pub fn import_clipboard_image(
     app: AppHandle,
-    canvas_id: String,
+    project_id: String,
     data_url: String,
     thumbnail_data_url: Option<String>,
 ) -> Result<ImportedImage, String> {
-    save_imported_data_url(&app, &canvas_id, &data_url, thumbnail_data_url.as_deref())
+    save_imported_data_url(&app, &project_id, &data_url, thumbnail_data_url.as_deref())
+}
+
+#[tauri::command]
+pub fn list_project_assets(
+    app: AppHandle,
+    project_id: String,
+) -> Result<Vec<ProjectAsset>, String> {
+    list_project_assets_value(&app, &project_id)
+}
+
+#[tauri::command]
+pub fn delete_project_asset(
+    app: AppHandle,
+    project_id: String,
+    asset_path: String,
+) -> Result<(), String> {
+    delete_project_asset_value(&app, &project_id, &asset_path)
+}
+
+#[tauri::command]
+pub fn open_project_asset(
+    app: AppHandle,
+    project_id: String,
+    asset_path: String,
+) -> Result<(), String> {
+    open_project_asset_value(&app, &project_id, &asset_path)
 }
 
 #[tauri::command]
@@ -199,7 +252,7 @@ pub fn cancel_run(state: State<'_, RunControlState>, run_id: String) -> Result<(
 pub async fn run_node(
     app: AppHandle,
     state: State<'_, RunControlState>,
-    canvas_id: String,
+    project_id: String,
     snapshot: WorkflowSnapshot,
     node_id: String,
 ) -> Result<RunResponse, String> {
@@ -212,7 +265,7 @@ pub async fn run_node(
         let execution_order = execution_order_for_node(&snapshot, &node_id)?;
         run_nodes(
             &app,
-            &canvas_id,
+            &project_id,
             &provider,
             &mut snapshot,
             execution_order,
@@ -230,7 +283,7 @@ pub async fn run_node(
 pub async fn run_workflow(
     app: AppHandle,
     state: State<'_, RunControlState>,
-    canvas_id: String,
+    project_id: String,
     snapshot: WorkflowSnapshot,
 ) -> Result<RunResponse, String> {
     let run_id = create_run_id();
@@ -242,7 +295,7 @@ pub async fn run_workflow(
         let execution_order = topological_order(&snapshot)?;
         run_nodes(
             &app,
-            &canvas_id,
+            &project_id,
             &provider,
             &mut snapshot,
             execution_order,

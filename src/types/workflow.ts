@@ -68,9 +68,38 @@ export type WorkflowCanvas = {
 };
 
 export type WorkflowProject = {
+  id: string;
+  name: string;
+  assetDirName: string;
   activeCanvasId: string;
   assetRootDir?: string | null;
   canvases: WorkflowCanvas[];
+};
+
+export type WorkflowProjectSummary = {
+  id: string;
+  name: string;
+  assetDirName: string;
+  createdAt: string;
+  updatedAt: string;
+  lastOpenedAt: string;
+};
+
+export type WorkflowProjectIndex = {
+  activeProjectId: string;
+  projects: WorkflowProjectSummary[];
+};
+
+export type ProjectAssetKind = "imported" | "generated" | "output" | "thumbnail";
+
+export type ProjectAsset = {
+  id: string;
+  kind: ProjectAssetKind;
+  name: string;
+  path: string;
+  thumbnailPath?: string | null;
+  sizeBytes: number;
+  modifiedAt: string;
 };
 
 export type RunResponse = {

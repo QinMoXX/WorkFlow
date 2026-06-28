@@ -30,6 +30,8 @@ export const appCopy = {
 };
 
 export const workspaceSidebarCopy = {
+  projectSelector: "项目",
+  createProject: "新建项目",
   canvasTab: "画布",
   assetsTab: "资产",
   canvasListTitle: "画布列表",
@@ -40,10 +42,16 @@ export const workspaceSidebarCopy = {
   renameCanvas: "重命名",
   deleteCanvas: "删除",
   openCanvasDir: "打开目录",
+  openProjectAssets: "打开项目资产",
   chooseAssetRoot: "选择资源根目录",
   resetAssetRoot: "恢复默认资源根目录",
   defaultAssetRoot: "默认应用数据目录",
   allFilter: "全部",
+  searchAssets: "搜索资产",
+  addAssetToCanvas: "添加到画布",
+  openAsset: "打开资产",
+  deleteAsset: "删除资产",
+  dragAssetHint: "拖拽到画布可创建图片输入节点",
   emptyCanvasTitle: "暂无画布",
   emptyCanvasDescription: "点击加号创建新画布。",
   emptyAssetsTitle: "暂无资产",

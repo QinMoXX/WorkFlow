@@ -21,8 +21,10 @@ use super::{
         WorkflowSnapshot,
     },
     providers::{
-        load_api_config as load_api_config_value, load_runtime_provider,
+        load_api_config as load_api_config_value, load_model_catalog as load_model_catalog_value,
+        load_runtime_provider,
         save_api_config as save_api_config_value, ApiConfig,
+        ModelCatalogConfig,
     },
     storage::{
         create_workflow_project as create_workflow_project_value,
@@ -250,6 +252,11 @@ pub fn save_api_config(app: AppHandle, config: ApiConfig) -> Result<(), String> 
 #[tauri::command]
 pub fn load_api_config(app: AppHandle) -> Result<ApiConfig, String> {
     load_api_config_value(&app)
+}
+
+#[tauri::command]
+pub fn load_model_catalog() -> ModelCatalogConfig {
+    load_model_catalog_value()
 }
 
 #[tauri::command]

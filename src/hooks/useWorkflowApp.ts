@@ -22,7 +22,11 @@ import {
 } from "@xyflow/react";
 import { WorkflowNodeCard } from "../components/WorkflowNodeCard";
 import { createNode, initialEdges, initialNodes } from "../lib/nodeCatalog";
-import { modelWhitelistByNodeKind } from "../lib/modelCatalog";
+import {
+  firstModelForNode,
+  loadBackendModelCatalog,
+  modelsForNode,
+} from "../lib/modelCatalog";
 import {
   connectionRules,
   fromSnapshot,
@@ -382,6 +386,15 @@ export function useWorkflowApp() {
   useEffect(() => {
     appendLogs(["工作流已就绪"]);
   }, [appendLogs]);
+
+  useEffect(() => {
+    loadBackendModelCatalog()
+      .then(() => {
+        setNodes((current) => normalizeNodeModels(current));
+        appendLogs(["已加载后端模型目录"]);
+      })
+      .catch((error) => appendLogs([`模型目录加载失败，已使用内置兜底：${String(error)}`]));
+  }, [appendLogs, setNodes]);
 
   const persistWorkspaceUiState = useCallback((patch: WorkspaceUiState) => {
     const nextState = {
@@ -1146,10 +1159,7 @@ export function useWorkflowApp() {
 
         if (node.data.kind === "imageGeneration" || node.data.kind === "textToImage" || node.data.kind === "imageToImage") {
           const imageInputs = connectedImageValues(nodes, edges, node.id);
-          const allowedModels =
-            node.data.kind === "imageGeneration" && imageInputs.length > 0
-              ? (modelWhitelistByNodeKind.imageToImage ?? [])
-              : (modelWhitelistByNodeKind[node.data.kind] ?? []);
+          const allowedModels = modelsForNode(node.data.kind).map((model) => model.id);
           const selectedModel = node.data.model?.trim() ?? "";
           if (!selectedModel || !allowedModels.includes(selectedModel)) {
             return `${node.data.title} 的模型不可用，请重新选择模型。`;
@@ -2383,6 +2393,35 @@ function isDeletedAssetRef(value: string | null | undefined, deletedRefs: string
 
 function normalizeLocalPathRef(value: string) {
   return value.trim().replace(/^file:\/\/\/?/i, "").replace(/\\/g, "/").toLowerCase();
+}
+
+function normalizeNodeModels(nodes: WorkflowNode[]) {
+  let changed = false;
+  const nextNodes = nodes.map((node) => {
+    if (
+      node.data.kind !== "imageGeneration" &&
+      node.data.kind !== "textToImage" &&
+      node.data.kind !== "imageToImage"
+    ) {
+      return node;
+    }
+
+    const selectableModels = modelsForNode(node.data.kind);
+    if (selectableModels.some((model) => model.id === node.data.model)) {
+      return node;
+    }
+
+    changed = true;
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        model: firstModelForNode(node.data.kind),
+      },
+    };
+  });
+
+  return changed ? nextNodes : nodes;
 }
 
 function currentCanvas(project: WorkflowProject): WorkflowCanvas {

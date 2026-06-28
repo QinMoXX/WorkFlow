@@ -42,6 +42,21 @@ pub struct ApiConfig {
     pub api_key: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelCatalogConfig {
+    pub base_url: String,
+    pub models: Vec<ProviderModel>,
+    pub model_whitelist_by_node_kind: Vec<NodeModelWhitelist>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeModelWhitelist {
+    pub node_kind: WorkflowNodeKind,
+    pub model_ids: Vec<String>,
+}
+
 pub fn save_api_config(app: &AppHandle, config: &ApiConfig) -> Result<(), String> {
     if config.api_key.trim().is_empty() {
         return Err("API Key 不能为空".to_string());
@@ -95,6 +110,36 @@ pub fn load_runtime_provider(app: &AppHandle) -> Result<ProviderConfig, String> 
         proxy_url: None,
         models: model_catalog(),
     })
+}
+
+pub fn load_model_catalog() -> ModelCatalogConfig {
+    ModelCatalogConfig {
+        base_url: NEW_API_BASE_URL.to_string(),
+        models: model_catalog(),
+        model_whitelist_by_node_kind: vec![
+            NodeModelWhitelist {
+                node_kind: WorkflowNodeKind::ImageGeneration,
+                model_ids: model_whitelist_for_node(WorkflowNodeKind::ImageGeneration)
+                    .iter()
+                    .map(|model_id| (*model_id).to_string())
+                    .collect(),
+            },
+            NodeModelWhitelist {
+                node_kind: WorkflowNodeKind::TextToImage,
+                model_ids: model_whitelist_for_node(WorkflowNodeKind::TextToImage)
+                    .iter()
+                    .map(|model_id| (*model_id).to_string())
+                    .collect(),
+            },
+            NodeModelWhitelist {
+                node_kind: WorkflowNodeKind::ImageToImage,
+                model_ids: model_whitelist_for_node(WorkflowNodeKind::ImageToImage)
+                    .iter()
+                    .map(|model_id| (*model_id).to_string())
+                    .collect(),
+            },
+        ],
+    }
 }
 
 pub fn resolve_ai_node_provider<'a>(

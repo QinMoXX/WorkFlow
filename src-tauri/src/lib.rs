@@ -3,7 +3,7 @@ mod workflow;
 use workflow::commands::{
     cancel_run, check_local_image_source, copy_image_to_clipboard, create_workflow_project,
     debug_frontend_logs, delete_canvas_assets_dir, delete_project_asset, import_clipboard_image,
-    import_image_data_url, list_project_assets, load_api_config, load_workflow,
+    import_image_data_url, list_project_assets, load_api_config, load_model_catalog, load_workflow,
     load_workflow_project, load_workflow_project_index, open_canvas_assets_dir, open_project_asset,
     rename_canvas_assets_dir, run_node, run_workflow, save_api_config, save_image_as,
     save_workflow, save_workflow_project, show_in_folder, switch_workflow_project, RunControlState,
@@ -39,6 +39,7 @@ pub fn run() {
             copy_image_to_clipboard,
             save_api_config,
             load_api_config,
+            load_model_catalog,
             cancel_run,
             run_node,
             run_workflow
